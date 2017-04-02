@@ -88,8 +88,7 @@ getLonCell <- function(lon) {
 totals <- array(0, c(144,72,11315))
 counts <- array(0, c(144,72,11315))
 
-#conn <- file("SOCATv4.tsv",open="r")
-conn <- file("short.tsv",open="r")
+conn <- file("SOCATv4.tsv",open="r")
 
 line <- readLines(conn,n=1)
 line_count <- 1
