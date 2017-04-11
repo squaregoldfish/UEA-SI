@@ -41,7 +41,7 @@ attemptFit <- function(measurements, weights, uncertainties) {
 
     fitted_curve <- NULL
     if (!is.null(fitted_params)) {
-        fitted_curve <- makeCurve(fitted_params, length(measurements), FALSE)
+        fitted_curve <- makeCurve(fitted_params, length(measurements))
     }
     
     return (fitted_curve)
@@ -125,7 +125,7 @@ fitCurve <- function(series, weights) {
 
                 # Now we need the complete curve
                 fitted_params <- model$m$getPar()
-                fit_curve <- makeCurve(fitted_params, length(fit_series), TRUE)
+                fit_curve <- makeCurve(fitted_params, length(fit_series))
 
                 if (fit_success && harmonic_count != 1) {
                     fit_success <- checkCurvePeaks(fitted_params)
@@ -332,12 +332,8 @@ checkCurvePeaks <- function(curve_params) {
 }
 
 # Make a curve from the supplied parameters
-makeCurve <- function(params, series_length, write_curve) {
+makeCurve <- function(params, series_length) {
     curve <- vector(mode="numeric", length=series_length)
-
-    if (write_curve) {
-        sink(paste("diagnostic/",lon,"_",lat,"_fitted_curve.csv",sep=""))
-    }
 
     for (curve_step in 1:series_length) {
         curve_value <- params[1] + params[2] * (curve_step - 1)
@@ -349,15 +345,7 @@ makeCurve <- function(params, series_length, write_curve) {
             curve_value <- curve_value + params[term] * cos(2*pi*trig_loop*((curve_step - 1)/365))
         }
 
-        if (write_curve) {
-            cat(curve_step,",",curve_value,"\n",sep="")
-        }
-
         curve[curve_step] <- curve_value
-    }
-
-    if (write_curve) {
-        sink()
     }
 
     return(curve)

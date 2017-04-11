@@ -42,16 +42,6 @@ SPATIAL_INTERP_WEIGHT_LIMIT <- 0.367879
 
 ##########################################################
 
-listToFile <- function(series, lon, lat, name) {
-
-    sink(paste("diagnostic/",lon,"_",lat,"_",name,".csv",sep=""))
-    for (i in 1:length(series)) {
-        cat(i,",",series[i],"\n",sep="")
-    }
-    sink()
-
-}
-
 # Calculate the values for temporal interpolation.
 # The returned value is a list of <time step, interpolated value, weight, uncertainty>
 # to be added to an existing series.
