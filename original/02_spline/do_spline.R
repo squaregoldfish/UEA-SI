@@ -184,21 +184,29 @@ for (lon in 1:144) {
 
             spline <- smooth.spline(combined,all.knots=TRUE,spar=0.3)$y
 
+            sink(month_meas_file, append=T)
             for (i in 1:length(spline)) {
-                sink(month_meas_file, append=T)
                 cat(i,",",monthly_measurements[i],"\n",sep="")
-                sink()
-                sink(uncertainty_file, append=T)
-                cat(i,",",monthly_uncertainties[i],"\n",sep="")
-                sink()
-                sink(month_curve_file, append=T)
-                cat(i,",",curve[i],"\n",sep="")
-                sink()
-                sink(spline_file, append=T)
-                cat(i,",",spline[i],"\n",sep="")
-                sink()
             }
+            sink()
 
+            sink(uncertainty_file, append=T)
+            for (i in 1:length(spline)) {
+                cat(i,",",monthly_uncertainties[i],"\n",sep="")
+            }
+            sink()
+
+            sink(month_curve_file, append=T)
+            for (i in 1:length(spline)) {
+                cat(i,",",curve[i],"\n",sep="")
+            }
+            sink()
+
+            sink(spline_file, append=T)
+            for (i in 1:length(spline)) {
+                cat(i,",",spline[i],"\n",sep="")
+            }
+            sink()
         }
     }
 }
