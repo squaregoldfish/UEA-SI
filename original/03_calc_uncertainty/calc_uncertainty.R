@@ -39,11 +39,8 @@ getNextValue <- function(series, start) {
 
 
 for (lon in 1:144) {
-#for (lon in 22:22) {
-    cat("\r",lon,"    ")
     for (lat in 1:72) {
-    #for (lat in 28:28) {
-
+        cat("\r",lon,lat,"    ")
 
         # Load data
         measurements_file <- paste("spline_output/measurements_",lon,"_",lat,".csv",sep="")
