@@ -7,7 +7,7 @@ START_YEAR <- 1985
 LON_SIZE <- 144
 LAT_SIZE <- 72
 VALID_LAT_SIZE <- 72
-TIME_SIZE <- 324
+TIME_SIZE <- 372
 
 
 lons <- vector(mode="numeric", length=LON_SIZE)
@@ -79,11 +79,11 @@ nc <- nc_create("fco2.nc", list(pco2_var, uncertainty_var))
 ncvar_put(nc, pco2_var, pco2)
 ncvar_put(nc, uncertainty_var, uncertainties)
 #ncatt_put(nc, "time", "calendar", "noleap")
-ncatt_put(nc, 0, "Title", "Statistically gap-filled fCO2 data south of 70N, 1985-2011")
-ncatt_put(nc, 0, "Version", "1.0 - 2015-09-10")
-ncatt_put(nc, 0, "Info", "Derived from SOCAT v2")
-ncatt_put(nc, 0, "Reference", "A statistical gap-filling method to interpolate global monthly surface ocean carbon dioxide data, doi to come")
-ncatt_put(nc, 0, "Contact", "Steve Jones <s.d.jones@exeter.ac.uk>")
+ncatt_put(nc, 0, "Title", "Statistically gap-filled fCO2 data south of 70N, 1985-2015")
+ncatt_put(nc, 0, "Version", "1.0a - 2017-04-26")
+ncatt_put(nc, 0, "Info", "Derived from SOCAT v4")
+ncatt_put(nc, 0, "Reference", "A statistical gap-filling method to interpolate global monthly surface ocean carbon dioxide data, doi:10.1002/2014MS000416")
+ncatt_put(nc, 0, "Contact", "Steve Jones <steve.jones@uib.no>")
 nc_close(nc)
 
 
