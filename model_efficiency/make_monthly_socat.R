@@ -2,6 +2,7 @@ library(ncdf4)
 
 MONTH_END_DAYS <- c(31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334, 365)
 
+cat("\rLoading daily values     ")
 nc <- nc_open("daily.nc")
 lons <- ncvar_get(nc, "LON")
 lats <- ncvar_get(nc, "LAT")
