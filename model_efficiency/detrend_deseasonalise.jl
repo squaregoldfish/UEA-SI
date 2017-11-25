@@ -18,7 +18,9 @@ function run()
         end
     end
 
-    NetCDF.ncclose(ARGS[1])
+    
+
+    NetCDF.close(nc)
 end
 
 @time run()
