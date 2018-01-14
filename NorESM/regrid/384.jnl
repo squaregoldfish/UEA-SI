@@ -1,0 +1,3 @@
+use "%%INFILE%%"
+save/clobber/file="/tmp/384.nc" pco2[j=1:384]
+quit
