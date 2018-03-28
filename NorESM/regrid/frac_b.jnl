@@ -1,4 +1,4 @@
 use "/tmp/1deg.nc"
-let pco2_fixed = pco2 * (1 / frac_b)
-save/clobber/file="/tmp/pco2_fixed.nc" pco2_fixed
+let sst_fixed = sst * (1 / frac_b)
+save/clobber/file="/tmp/sst_fixed.nc" sst_fixed
 quit

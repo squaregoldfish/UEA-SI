@@ -8,7 +8,7 @@ TEMP="/tmp"
 # The remapping weights file
 MAP_FILE="map_tnx1v1_to_woa09_aave_20120501.nc"
 
-for fullpath in $INDIR/*
+for fullpath in $INDIR/*.hd.*
 do
 	file=$(basename $fullpath)
 
@@ -26,12 +26,12 @@ do
 	pyferret -script /tmp/frac_b.jnl
 
 	# Make the variables in the output file more sensible
-	ncrename -O -d Y1_384,latitude -v Y1_384,latitude -d X,longitude -v X,longitude -v PCO2_FIXED,pco2 /tmp/pco2_fixed.nc $OUTDIR/$file
+	ncrename -O -d Y1_384,latitude -v Y1_384,latitude -d X,longitude -v X,longitude -v SST_FIXED,sst /tmp/sst_fixed.nc $OUTDIR/$file
 
 	# Cleanup
 	rm $TEMP/384.jnl
 	rm $TEMP/384.nc
 	rm $TEMP/1deg.nc
 	rm $TEMP/frac_b.jnl
-	rm $TEMP/pco2_fixed.nc
+	rm $TEMP/sst_fixed.nc
 done
