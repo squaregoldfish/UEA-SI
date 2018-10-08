@@ -1,7 +1,7 @@
 using NCDatasets
 
-const INFILE = "SOCATv6_FlagE.tsv"
-const UNCERTAINTY = 10
+const INFILES = ["SOCATv6.tsv" "SOCATv6_FlagE.tsv"]
+const UNCERTAINTIES = [2.5 10]
 const OUTFILE = "daily.nc"
 const CELLSIZE = 2.5
 const STARTYEAR = 1985
@@ -95,13 +95,16 @@ function applydataset(
     datasetmean::Array{Float64, 3} = datasettotals ./ datasetcounts
     datasetmean[isnan.(datasetmean)] .= 0
     overalltotals .= overalltotals .+ datasetmean
+    print(".")
 
     datasetuncertaintymean::Array{Float64, 3} = datasetuncertaintytotals ./ datasetcounts
     datasetuncertaintymean[isnan.(datasetuncertaintymean)] .= 0
     overalluncertaintytotals .= overalluncertaintytotals .+ datasetuncertaintymean
+    print(".")
 
     datasetmean[datasetmean .> 0] .= 1
     overallcounts .= overallcounts .+ datasetmean
+    print(".")
 end
 
 function run()
@@ -113,76 +116,82 @@ function run()
     overalluncertaintytotals::Array{Float64, 3} = zeros(convert(Int64, 360 / CELLSIZE), convert(Int64, 180 / CELLSIZE), totaldays)
     overallcellcounts::Array{Int64, 3} = zeros(convert(Int64, 360 / CELLSIZE), convert(Int64, 180 / CELLSIZE), totaldays)
 
-    # Open input file
-    inchan::IOStream = open(INFILE)
+    # Loop over all files
+    for fileindex = 1:length(INFILES)
+        file::String = INFILES[fileindex]
+        uncertainty::Float64 = UNCERTAINTIES[fileindex]
 
-    # Skip the header
-    inheader::Bool = true
-    while inheader
-        if findfirst(r"Expocode.*SOCAT_DOI", readline(inchan)) !== nothing
-            inheader = false
+        # Open input file
+        inchan::IOStream = open(file)
+
+        # Skip the header
+        inheader::Bool = true
+        while inheader
+            if findfirst(r"Expocode.*SOCAT_DOI", readline(inchan)) !== nothing
+                inheader = false
+            end
         end
-    end
 
-    currentdataset::String = ""
-    datasetcelltotals::Array{Float64, 3} = zeros(convert(Int64, 360 / CELLSIZE), convert(Int64, 180 / CELLSIZE), totaldays)
-    datasetuncertaintytotals::Array{Float64, 3} = zeros(convert(Int64, 360 / CELLSIZE), convert(Int64, 180 / CELLSIZE), totaldays)
-    datasetcellcounts::Array{Int64, 3} = zeros(convert(Int64, 360 / CELLSIZE), convert(Int64, 180 / CELLSIZE), totaldays)
+        currentdataset::String = ""
+        datasetcelltotals::Array{Float64, 3} = zeros(convert(Int64, 360 / CELLSIZE), convert(Int64, 180 / CELLSIZE), totaldays)
+        datasetuncertaintytotals::Array{Float64, 3} = zeros(convert(Int64, 360 / CELLSIZE), convert(Int64, 180 / CELLSIZE), totaldays)
+        datasetcellcounts::Array{Int64, 3} = zeros(convert(Int64, 360 / CELLSIZE), convert(Int64, 180 / CELLSIZE), totaldays)
 
-    currentline::String = readline(inchan)
-    linecount::Int64 = 1
-    while length(currentline) > 0
+        currentline::String = readline(inchan)
+        linecount::Int64 = 1
+        while length(currentline) > 0
 
-        fields::Array{String, 1} = split(currentline, "\t")
+            fields::Array{String, 1} = split(currentline, "\t")
 
-        dataset::String = fields[1]
+            dataset::String = fields[1]
 
-        if dataset != currentdataset
-            if length(currentdataset) > 0
-                applydataset(datasetcelltotals, datasetuncertaintytotals, datasetcellcounts,
-                    overallcelltotals, overalluncertaintytotals, overallcellcounts)
+            if dataset != currentdataset
+                if length(currentdataset) > 0
+                    print("\033[1K\r$currentdataset ($file $linecount)")
+                    applydataset(datasetcelltotals, datasetuncertaintytotals, datasetcellcounts,
+                        overallcelltotals, overalluncertaintytotals, overallcellcounts)
 
-                print("\033[1K\r$currentdataset ($linecount)")
+                    datasetcelltotals .= 0
+                    datasetuncertaintytotals .= 0
+                    datasetcellcounts .= 0
+                end
 
-                datasetcelltotals .= 0
-                datasetuncertaintytotals .= 0
-                datasetcellcounts .= 0
+                currentdataset = dataset
             end
 
-            currentdataset = dataset
+            year::Int64 = parse(Int64, fields[5])
+            month::Int64 = parse(Int64, fields[6])
+            day::Int64 = parse(Int64, fields[7])
+            longitude::Float64 = parse(Float64, fields[11])
+            latitude::Float64 = parse(Float64, fields[12])
+            fco2::Float64 = parse(Float64, fields[24])
+
+            cellindex::Tuple{Int64, Int64} = getcellindex(longitude, latitude)
+
+            dateindex::Int64 = getdateindex(year, month, day)
+
+            if dateindex != -1
+                datasetcelltotals[cellindex[1], cellindex[2], dateindex] =
+                    datasetcelltotals[cellindex[1], cellindex[2], dateindex] + fco2
+
+                datasetuncertaintytotals[cellindex[1], cellindex[2], dateindex] =
+                    datasetuncertaintytotals[cellindex[1], cellindex[2], dateindex] + uncertainty
+
+                datasetcellcounts[cellindex[1], cellindex[2], dateindex] =
+                    datasetcellcounts[cellindex[1], cellindex[2], dateindex] + 1
+            end
+
+            currentline = readline(inchan)
+            linecount = linecount + 1
         end
 
-        year::Int64 = parse(Int64, fields[5])
-        month::Int64 = parse(Int64, fields[6])
-        day::Int64 = parse(Int64, fields[7])
-        longitude::Float64 = parse(Float64, fields[11])
-        latitude::Float64 = parse(Float64, fields[12])
-        fco2::Float64 = parse(Float64, fields[24])
+        close(inchan)
 
-        cellindex::Tuple{Int64, Int64} = getcellindex(longitude, latitude)
-
-        dateindex::Int64 = getdateindex(year, month, day)
-
-        if dateindex != -1
-            datasetcelltotals[cellindex[1], cellindex[2], dateindex] =
-                datasetcelltotals[cellindex[1], cellindex[2], dateindex] + fco2
-
-            datasetuncertaintytotals[cellindex[1], cellindex[2], dateindex] =
-                datasetuncertaintytotals[cellindex[1], cellindex[2], dateindex] + UNCERTAINTY
-
-            datasetcellcounts[cellindex[1], cellindex[2], dateindex] =
-                datasetcellcounts[cellindex[1], cellindex[2], dateindex] + 1
-        end
-
-        currentline = readline(inchan)
-        linecount = linecount + 1
+        # The last dataset
+        print("\033[1K\r$currentdataset ($file $linecount)")
+        applydataset(datasetcelltotals, datasetuncertaintytotals, datasetcellcounts,
+            overallcelltotals, overalluncertaintytotals, overallcellcounts)
     end
-
-    close(inchan)
-
-    # The last dataset
-    applydataset(datasetcelltotals, datasetuncertaintytotals, datasetcellcounts,
-        overallcelltotals, overalluncertaintytotals, overallcellcounts)
 
     # Overall cell means
     local meanfco2::Array{Float64, 3} = overallcelltotals ./ overallcellcounts
