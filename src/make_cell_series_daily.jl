@@ -1,10 +1,10 @@
 using NCDatasets
 
-const INFILE = "SOCATv5.tsv"
+const INFILE = "SOCATv6.tsv"
 const OUTFILE = "daily.nc"
 const CELLSIZE = 2.5
 const STARTYEAR = 1985
-const ENDYEAR = 2016
+const ENDYEAR = 2017
 
 # Zero-based day of year of each month
 const MONTHSTARTS = [0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334]
@@ -104,9 +104,16 @@ function run()
     overallcelltotals::Array{Float64, 3} = zeros(convert(Int64, 360 / CELLSIZE), convert(Int64, 180 / CELLSIZE), totaldays)
     overallcellcounts::Array{Int64, 3} = zeros(convert(Int64, 360 / CELLSIZE), convert(Int64, 180 / CELLSIZE), totaldays)
 
-
     # Open input file
     inchan::IOStream = open(INFILE)
+
+    # Skip the header
+    inheader::Bool = true
+    while inheader
+        if findfirst(r"Expocode.*SOCAT_DOI", readline(inchan)) !== nothing
+            inheader = false
+        end
+    end
 
     currentdataset::String = ""
     datasetcelltotals::Array{Float64, 3} = zeros(convert(Int64, 360 / CELLSIZE), convert(Int64, 180 / CELLSIZE), totaldays)
