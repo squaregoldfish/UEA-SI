@@ -133,9 +133,12 @@ function run()
         end
 
         currentdataset::String = ""
-        datasetcelltotals::Array{Float64, 3} = zeros(convert(Int64, 360 / CELLSIZE), convert(Int64, 180 / CELLSIZE), totaldays)
-        datasetuncertaintytotals::Array{Float64, 3} = zeros(convert(Int64, 360 / CELLSIZE), convert(Int64, 180 / CELLSIZE), totaldays)
-        datasetcellcounts::Array{Int64, 3} = zeros(convert(Int64, 360 / CELLSIZE), convert(Int64, 180 / CELLSIZE), totaldays)
+        currentcell::Tuple{Int64, Int64} = -1, -1
+        currentdate::Int = -1
+
+        currenttotal::Float64 = 0
+        currentuncertaintytotal::Float64 = 0
+        currentcount::Int64 = 0
 
         currentline::String = readline(inchan)
         linecount::Int64 = 1
@@ -144,41 +147,47 @@ function run()
             fields::Array{String, 1} = split(currentline, "\t")
 
             dataset::String = fields[1]
-
-            if dataset != currentdataset
-                if length(currentdataset) > 0
-                    print("\033[1K\r$currentdataset ($file $linecount)")
-                    applydataset(datasetcelltotals, datasetuncertaintytotals, datasetcellcounts,
-                        overallcelltotals, overalluncertaintytotals, overallcellcounts)
-
-                    datasetcelltotals .= 0
-                    datasetuncertaintytotals .= 0
-                    datasetcellcounts .= 0
-                end
-
-                currentdataset = dataset
-            end
-
             year::Int64 = parse(Int64, fields[5])
             month::Int64 = parse(Int64, fields[6])
             day::Int64 = parse(Int64, fields[7])
-            longitude::Float64 = parse(Float64, fields[11])
-            latitude::Float64 = parse(Float64, fields[12])
-            fco2::Float64 = parse(Float64, fields[24])
-
-            cellindex::Tuple{Int64, Int64} = getcellindex(longitude, latitude)
-
             dateindex::Int64 = getdateindex(year, month, day)
 
+            longitude::Float64 = parse(Float64, fields[11])
+            latitude::Float64 = parse(Float64, fields[12])
+            cellindex::Tuple{Int64, Int64} = getcellindex(longitude, latitude)
+
+            fco2::Float64 = parse(Float64, fields[24])
+
+            if dataset != currentdataset ||
+                cellindex != currentcell ||
+                dateindex != currentdate 
+
+                if currentdate != -1
+                    print("\033[1K\r$file $linecount $currentcount")
+                    overallcelltotals[currentcell[1], currentcell[2], currentdate] = 
+                        overallcelltotals[currentcell[1], currentcell[2], currentdate] + currenttotal / currentcount
+
+                    overalluncertaintytotals[currentcell[1], currentcell[2], currentdate] = 
+                        overalluncertaintytotals[currentcell[1], currentcell[2], currentdate] + currentuncertaintytotal / currentcount
+
+                    overallcellcounts[currentcell[1], currentcell[2], currentdate] = 
+                        overallcellcounts[currentcell[1], currentcell[2], currentdate] + 1
+                end
+
+                currentdataset = dataset
+                currentcell = cellindex
+                currentdate = dateindex
+
+                currenttotal = 0
+                currentuncertaintytotal = 0
+                currentcount = 0
+            end
+
+
             if dateindex != -1
-                datasetcelltotals[cellindex[1], cellindex[2], dateindex] =
-                    datasetcelltotals[cellindex[1], cellindex[2], dateindex] + fco2
-
-                datasetuncertaintytotals[cellindex[1], cellindex[2], dateindex] =
-                    datasetuncertaintytotals[cellindex[1], cellindex[2], dateindex] + uncertainty
-
-                datasetcellcounts[cellindex[1], cellindex[2], dateindex] =
-                    datasetcellcounts[cellindex[1], cellindex[2], dateindex] + 1
+                currenttotal = currenttotal + fco2
+                currentuncertaintytotal = currentuncertaintytotal + uncertainty
+                currentcount = currentcount + 1
             end
 
             currentline = readline(inchan)
@@ -188,9 +197,17 @@ function run()
         close(inchan)
 
         # The last dataset
-        print("\033[1K\r$currentdataset ($file $linecount)")
-        applydataset(datasetcelltotals, datasetuncertaintytotals, datasetcellcounts,
-            overallcelltotals, overalluncertaintytotals, overallcellcounts)
+        print("\033[1K\r$file $linecount")
+        if currentdate != -1
+            overallcelltotals[currentcell[1], currentcell[2], currentdate] = 
+                overallcelltotals[currentcell[1], currentcell[2], currentdate] + currenttotal / currentcount
+
+            overalluncertaintytotals[currentcell[1], currentcell[2], currentdate] = 
+                overalluncertaintytotals[currentcell[1], currentcell[2], currentdate] + currentuncertaintytotal / currentcount
+
+            overallcellcounts[currentcell[1], currentcell[2], currentdate] = 
+                overallcellcounts[currentcell[1], currentcell[2], currentdate] + 1
+        end
     end
 
     # Overall cell means
