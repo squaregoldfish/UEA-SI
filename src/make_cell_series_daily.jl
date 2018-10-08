@@ -1,6 +1,7 @@
 using NCDatasets
 
-const INFILE = "SOCATv6.tsv"
+const INFILE = "SOCATv6_FlagE.tsv"
+const UNCERTAINTY = 10
 const OUTFILE = "daily.nc"
 const CELLSIZE = 2.5
 const STARTYEAR = 1985
@@ -87,11 +88,18 @@ function getcellindex(longitude::Float64, latitude::Float64)::Tuple{Int64, Int64
     return loncell, latcell
 end
 
-function applydataset(datasettotals::Array{Float64, 3}, datasetcounts::Array{Int64, 3}, overalltotals::Array{Float64, 3}, overallcounts::Array{Int64, 3})
+function applydataset(
+        datasettotals::Array{Float64, 3}, datasetuncertaintytotals::Array{Float64, 3}, datasetcounts::Array{Int64, 3},
+        overalltotals::Array{Float64, 3}, overalluncertaintytotals::Array{Float64, 3}, overallcounts::Array{Int64, 3})
+
     datasetmean::Array{Float64, 3} = datasettotals ./ datasetcounts
     datasetmean[isnan.(datasetmean)] .= 0
-
     overalltotals .= overalltotals .+ datasetmean
+
+    datasetuncertaintymean::Array{Float64, 3} = datasetuncertaintytotals ./ datasetcounts
+    datasetuncertaintymean[isnan.(datasetuncertaintymean)] .= 0
+    overalluncertaintytotals .= overalluncertaintytotals .+ datasetuncertaintymean
+
     datasetmean[datasetmean .> 0] .= 1
     overallcounts .= overallcounts .+ datasetmean
 end
@@ -102,6 +110,7 @@ function run()
 
     # Output data set
     overallcelltotals::Array{Float64, 3} = zeros(convert(Int64, 360 / CELLSIZE), convert(Int64, 180 / CELLSIZE), totaldays)
+    overalluncertaintytotals::Array{Float64, 3} = zeros(convert(Int64, 360 / CELLSIZE), convert(Int64, 180 / CELLSIZE), totaldays)
     overallcellcounts::Array{Int64, 3} = zeros(convert(Int64, 360 / CELLSIZE), convert(Int64, 180 / CELLSIZE), totaldays)
 
     # Open input file
@@ -117,6 +126,7 @@ function run()
 
     currentdataset::String = ""
     datasetcelltotals::Array{Float64, 3} = zeros(convert(Int64, 360 / CELLSIZE), convert(Int64, 180 / CELLSIZE), totaldays)
+    datasetuncertaintytotals::Array{Float64, 3} = zeros(convert(Int64, 360 / CELLSIZE), convert(Int64, 180 / CELLSIZE), totaldays)
     datasetcellcounts::Array{Int64, 3} = zeros(convert(Int64, 360 / CELLSIZE), convert(Int64, 180 / CELLSIZE), totaldays)
 
     currentline::String = readline(inchan)
@@ -129,11 +139,13 @@ function run()
 
         if dataset != currentdataset
             if length(currentdataset) > 0
-                applydataset(datasetcelltotals, datasetcellcounts, overallcelltotals, overallcellcounts)
+                applydataset(datasetcelltotals, datasetuncertaintytotals, datasetcellcounts,
+                    overallcelltotals, overalluncertaintytotals, overallcellcounts)
 
                 print("\033[1K\r$currentdataset ($linecount)")
 
                 datasetcelltotals .= 0
+                datasetuncertaintytotals .= 0
                 datasetcellcounts .= 0
             end
 
@@ -152,8 +164,14 @@ function run()
         dateindex::Int64 = getdateindex(year, month, day)
 
         if dateindex != -1
-            datasetcelltotals[cellindex[1], cellindex[2], dateindex] = datasetcelltotals[cellindex[1], cellindex[2], dateindex] + fco2
-            datasetcellcounts[cellindex[1], cellindex[2], dateindex] = datasetcellcounts[cellindex[1], cellindex[2], dateindex] + 1
+            datasetcelltotals[cellindex[1], cellindex[2], dateindex] =
+                datasetcelltotals[cellindex[1], cellindex[2], dateindex] + fco2
+
+            datasetuncertaintytotals[cellindex[1], cellindex[2], dateindex] =
+                datasetuncertaintytotals[cellindex[1], cellindex[2], dateindex] + UNCERTAINTY
+
+            datasetcellcounts[cellindex[1], cellindex[2], dateindex] =
+                datasetcellcounts[cellindex[1], cellindex[2], dateindex] + 1
         end
 
         currentline = readline(inchan)
@@ -163,11 +181,15 @@ function run()
     close(inchan)
 
     # The last dataset
-    applydataset(datasetcelltotals, datasetcellcounts, overallcelltotals, overallcellcounts)
+    applydataset(datasetcelltotals, datasetuncertaintytotals, datasetcellcounts,
+        overallcelltotals, overalluncertaintytotals, overallcellcounts)
 
     # Overall cell means
     local meanfco2::Array{Float64, 3} = overallcelltotals ./ overallcellcounts
     meanfco2 = replace(meanfco2, NaN=>-1e35)
+
+    local meanuncertainty::Array{Float64, 3} = overalluncertaintytotals ./ overallcellcounts
+    meanuncertainty = replace(meanuncertainty, NaN=>-1e35)
 
     # Write NetCDF
     nc = Dataset(OUTFILE, "c")
@@ -187,12 +209,17 @@ function run()
     ncfco2 = defVar(nc, "fCO2", Float64, ("longitude", "latitude", "time"))
     ncfco2.attrib["_FillValue"] = -1e35
 
+    ncuncertainty = defVar(nc, "uncertainty", Float64, ("longitude", "latitude", "time"))
+    ncuncertainty.attrib["_FillValue"] = -1e35
+
     nclon[:] = collect(range(CELLSIZE / 2, step=CELLSIZE, stop=360))
     nclat[:] = collect(range(-90 + CELLSIZE / 2, step=CELLSIZE, stop=90))
     nctime[:] = collect(range(STARTYEAR, step=(1/365), stop=(ENDYEAR + 1) - (1/365)))
     ncfco2[:,:,:] = meanfco2
+    ncuncertainty[:,:,:] = meanuncertainty
 
     close(nc)
 end
 
+print("")
 @time run()
