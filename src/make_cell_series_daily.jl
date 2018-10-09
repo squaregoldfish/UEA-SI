@@ -88,30 +88,12 @@ function getcellindex(longitude::Float64, latitude::Float64)::Tuple{Int64, Int64
     return loncell, latcell
 end
 
-function applydataset(
-        datasettotals::Array{Float64, 3}, datasetuncertaintytotals::Array{Float64, 3}, datasetcounts::Array{Int64, 3},
-        overalltotals::Array{Float64, 3}, overalluncertaintytotals::Array{Float64, 3}, overallcounts::Array{Int64, 3})
-
-    datasetmean::Array{Float64, 3} = datasettotals ./ datasetcounts
-    datasetmean[isnan.(datasetmean)] .= 0
-    overalltotals .= overalltotals .+ datasetmean
-    print(".")
-
-    datasetuncertaintymean::Array{Float64, 3} = datasetuncertaintytotals ./ datasetcounts
-    datasetuncertaintymean[isnan.(datasetuncertaintymean)] .= 0
-    overalluncertaintytotals .= overalluncertaintytotals .+ datasetuncertaintymean
-    print(".")
-
-    datasetmean[datasetmean .> 0] .= 1
-    overallcounts .= overallcounts .+ datasetmean
-    print(".")
-end
-
 function run()
 
     totaldays::Int64 = (ENDYEAR - STARTYEAR + 1) * 365
 
     # Output data set
+    print("Initialising...")
     overallcelltotals::Array{Float64, 3} = zeros(convert(Int64, 360 / CELLSIZE), convert(Int64, 180 / CELLSIZE), totaldays)
     overalluncertaintytotals::Array{Float64, 3} = zeros(convert(Int64, 360 / CELLSIZE), convert(Int64, 180 / CELLSIZE), totaldays)
     overallcellcounts::Array{Int64, 3} = zeros(convert(Int64, 360 / CELLSIZE), convert(Int64, 180 / CELLSIZE), totaldays)
@@ -156,7 +138,7 @@ function run()
             latitude::Float64 = parse(Float64, fields[12])
             cellindex::Tuple{Int64, Int64} = getcellindex(longitude, latitude)
 
-            fco2::Float64 = parse(Float64, fields[24])
+            pco2::Float64 = parse(Float64, fields[24])
 
             if dataset != currentdataset ||
                 cellindex != currentcell ||
@@ -185,7 +167,7 @@ function run()
 
 
             if dateindex != -1
-                currenttotal = currenttotal + fco2
+                currenttotal = currenttotal + pco2
                 currentuncertaintytotal = currentuncertaintytotal + uncertainty
                 currentcount = currentcount + 1
             end
@@ -211,13 +193,15 @@ function run()
     end
 
     # Overall cell means
-    local meanfco2::Array{Float64, 3} = overallcelltotals ./ overallcellcounts
-    meanfco2 = replace(meanfco2, NaN=>-1e35)
+    print("\033[1K\rCalculating means...")
+    local meanpco2::Array{Float64, 3} = overallcelltotals ./ overallcellcounts
+    meanpco2 = replace(meanpco2, NaN=>-1e35)
 
     local meanuncertainty::Array{Float64, 3} = overalluncertaintytotals ./ overallcellcounts
     meanuncertainty = replace(meanuncertainty, NaN=>-1e35)
 
     # Write NetCDF
+    print("\033[1K\rWriting output...")
     nc = Dataset(OUTFILE, "c")
     defDim(nc, "longitude", trunc(Int, (360 / CELLSIZE)))
     defDim(nc, "latitude", trunc(Int, (180 / CELLSIZE)))
@@ -232,8 +216,8 @@ function run()
     nctime = defVar(nc, "time", Float32, ("time",))
     nctime.attrib["calendar"] = "noleap"
 
-    ncfco2 = defVar(nc, "fCO2", Float64, ("longitude", "latitude", "time"))
-    ncfco2.attrib["_FillValue"] = -1e35
+    ncpco2 = defVar(nc, "pCO2", Float64, ("longitude", "latitude", "time"))
+    ncpco2.attrib["_FillValue"] = -1e35
 
     ncuncertainty = defVar(nc, "uncertainty", Float64, ("longitude", "latitude", "time"))
     ncuncertainty.attrib["_FillValue"] = -1e35
@@ -241,11 +225,11 @@ function run()
     nclon[:] = collect(range(CELLSIZE / 2, step=CELLSIZE, stop=360))
     nclat[:] = collect(range(-90 + CELLSIZE / 2, step=CELLSIZE, stop=90))
     nctime[:] = collect(range(STARTYEAR, step=(1/365), stop=(ENDYEAR + 1) - (1/365)))
-    ncfco2[:,:,:] = meanfco2
+    ncpco2[:,:,:] = meanpco2
     ncuncertainty[:,:,:] = meanuncertainty
 
     close(nc)
+    print("\n")
 end
 
-print("")
 @time run()
