@@ -6,9 +6,9 @@ const OUTFILE = "pco2_spatial_variation.jldata"
 
 function run()
 	print("Loading input data...")
-	lons = Dataset(INFILE)["longitude"]
-	lats = Dataset(INFILE)["latitude"]
-	pco2 = Dataset(INFILE)["pCO2"]
+	lons = Dataset(INFILE)["longitude"][:]
+	lats = Dataset(INFILE)["latitude"][:]
+	pco2 = Dataset(INFILE)["pCO2"][:,:,:]
 
 	lonsize::Int64 = length(lons)
 	latsize::Int64 = length(lats)
@@ -18,7 +18,7 @@ function run()
 	variationtotal::Array{Float64, 4} = zeros(lonsize, latsize, lonsize, latsize)
 	variationcount::Array{Int64, 4} = zeros(lonsize, latsize, lonsize, latsize)
 
-	for timeloop::Int64 in 1:10
+	for timeloop::Int64 in 1:1000
 		print("\033[1K\r$timeloop / $timesize")
 		for lonloop::Int64 in 1:lonsize
 			for latloop::Int64 in 1:latsize
