@@ -12,7 +12,7 @@ const MONTHSTARTS = [0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334]
 const LEAPMONTHSTARTS = [0, 31, 60, 91, 121, 152, 182, 213, 244, 274, 305, 335]
 
 # Days of the year
-DAYSTARTS = range(1, step=1, length=365)
+const DAYSTARTS = range(1, step=1, length=365)
 
 # Calculate the conversion of leap year days to 365 'normal' year days
 # Each leap year day lasts 1 1/365 normal days 
@@ -90,69 +90,72 @@ end
 
 function run()
 
-    totaldays::Int64 = (ENDYEAR - STARTYEAR + 1) * 365
+    local totaldays::Int64 = (ENDYEAR - STARTYEAR + 1) * 365
 
     # Output data set
     print("Initialising...")
-    overallcelltotals::Array{Float64, 3} = zeros(convert(Int64, 360 / CELLSIZE), convert(Int64, 180 / CELLSIZE), totaldays)
-    overalluncertaintytotals::Array{Float64, 3} = zeros(convert(Int64, 360 / CELLSIZE), convert(Int64, 180 / CELLSIZE), totaldays)
-    overallcellcounts::Array{Int64, 3} = zeros(convert(Int64, 360 / CELLSIZE), convert(Int64, 180 / CELLSIZE), totaldays)
+    local overallcelltotals::Array{Float64, 3} = zeros(convert(Int64, 360 / CELLSIZE), convert(Int64, 180 / CELLSIZE), totaldays)
+    local overalluncertaintytotals::Array{Float64, 3} = zeros(convert(Int64, 360 / CELLSIZE), convert(Int64, 180 / CELLSIZE), totaldays)
+    local overallcellcounts::Array{Int64, 3} = zeros(convert(Int64, 360 / CELLSIZE), convert(Int64, 180 / CELLSIZE), totaldays)
 
     # Loop over all files
     for fileindex = 1:length(INFILES)
-        file::String = INFILES[fileindex]
-        uncertainty::Float64 = UNCERTAINTIES[fileindex]
+        local file::String = INFILES[fileindex]
+        local uncertainty::Float64 = UNCERTAINTIES[fileindex]
 
         # Open input file
-        inchan::IOStream = open(file)
+        local inchan::IOStream = open(file)
 
         # Skip the header
-        inheader::Bool = true
+        local inheader::Bool = true
         while inheader
             if findfirst(r"Expocode.*SOCAT_DOI", readline(inchan)) !== nothing
                 inheader = false
             end
         end
 
-        currentdataset::String = ""
-        currentcell::Tuple{Int64, Int64} = -1, -1
-        currentdate::Int = -1
+        local currentdataset::String = ""
+        local currentcell::Tuple{Int64, Int64} = -1, -1
+        local currentdate::Int = -1
 
-        currenttotal::Float64 = 0
-        currentuncertaintytotal::Float64 = 0
-        currentcount::Int64 = 0
+        local currenttotal::Float64 = 0
+        local currentuncertaintytotal::Float64 = 0
+        local currentcount::Int64 = 0
 
-        currentline::String = readline(inchan)
-        linecount::Int64 = 1
+        local currentline::String = readline(inchan)
+        local linecount::Int64 = 1
+        
         while length(currentline) > 0
+            if mod(linecount, 10000) == 0
+                print("\033[1K\r$file $linecount")
+            end
 
-            fields::Array{String, 1} = split(currentline, "\t")
+            local fields::Array{String, 1} = split(currentline, "\t")
 
-            dataset::String = fields[1]
-            year::Int64 = parse(Int64, fields[5])
-            month::Int64 = parse(Int64, fields[6])
-            day::Int64 = parse(Int64, fields[7])
-            dateindex::Int64 = getdateindex(year, month, day)
+            local dataset::String = fields[1]
+            local year::Int64 = parse(Int64, fields[5])
+            local month::Int64 = parse(Int64, fields[6])
+            local day::Int64 = parse(Int64, fields[7])
+            local dateindex::Int64 = getdateindex(year, month, day)
 
-            longitude::Float64 = parse(Float64, fields[11])
-            latitude::Float64 = parse(Float64, fields[12])
-            cellindex::Tuple{Int64, Int64} = getcellindex(longitude, latitude)
+            local longitude::Float64 = parse(Float64, fields[11])
+            local latitude::Float64 = parse(Float64, fields[12])
+            local cellindex::Tuple{Int64, Int64} = getcellindex(longitude, latitude)
 
-            pco2::Float64 = parse(Float64, fields[24])
+            local pco2::Float64 = parse(Float64, fields[24])
 
             if dataset != currentdataset ||
                 cellindex != currentcell ||
                 dateindex != currentdate 
 
                 if currentdate != -1
-                    print("\033[1K\r$file $linecount $currentcount")
-                    overallcelltotals[currentcell[1], currentcell[2], currentdate] = 
+                    @inbounds overallcelltotals[currentcell[1], currentcell[2], currentdate] = 
                         overallcelltotals[currentcell[1], currentcell[2], currentdate] + currenttotal / currentcount
 
-                    overalluncertaintytotals[currentcell[1], currentcell[2], currentdate] = 
+                    @inbounds overalluncertaintytotals[currentcell[1], currentcell[2], currentdate] = 
                         overalluncertaintytotals[currentcell[1], currentcell[2], currentdate] + currentuncertaintytotal / currentcount
 
-                    overallcellcounts[currentcell[1], currentcell[2], currentdate] = 
+                    @inbounds overallcellcounts[currentcell[1], currentcell[2], currentdate] = 
                         overallcellcounts[currentcell[1], currentcell[2], currentdate] + 1
                 end
 
@@ -181,13 +184,13 @@ function run()
         # The last dataset
         print("\033[1K\r$file $linecount")
         if currentdate != -1
-            overallcelltotals[currentcell[1], currentcell[2], currentdate] = 
+            @inbounds overallcelltotals[currentcell[1], currentcell[2], currentdate] = 
                 overallcelltotals[currentcell[1], currentcell[2], currentdate] + currenttotal / currentcount
 
-            overalluncertaintytotals[currentcell[1], currentcell[2], currentdate] = 
+            @inbounds overalluncertaintytotals[currentcell[1], currentcell[2], currentdate] = 
                 overalluncertaintytotals[currentcell[1], currentcell[2], currentdate] + currentuncertaintytotal / currentcount
 
-            overallcellcounts[currentcell[1], currentcell[2], currentdate] = 
+            @inbounds overallcellcounts[currentcell[1], currentcell[2], currentdate] = 
                 overallcellcounts[currentcell[1], currentcell[2], currentdate] + 1
         end
     end
@@ -202,24 +205,24 @@ function run()
 
     # Write NetCDF
     print("\033[1K\rWriting output...")
-    nc = Dataset(OUTFILE, "c")
+    local nc = Dataset(OUTFILE, "c")
     defDim(nc, "longitude", trunc(Int, (360 / CELLSIZE)))
     defDim(nc, "latitude", trunc(Int, (180 / CELLSIZE)))
     defDim(nc, "time", totaldays)
 
-    nclon = defVar(nc, "longitude", Float32, ("longitude",))
+    local nclon = defVar(nc, "longitude", Float32, ("longitude",))
     nclon.attrib["units"] = "degrees_east"
 
-    nclat = defVar(nc, "latitude", Float32, ("latitude",))
+    local nclat = defVar(nc, "latitude", Float32, ("latitude",))
     nclat.attrib["units"] = "degrees_north"
 
-    nctime = defVar(nc, "time", Float32, ("time",))
+    local nctime = defVar(nc, "time", Float32, ("time",))
     nctime.attrib["calendar"] = "noleap"
 
-    ncpco2 = defVar(nc, "pCO2", Float64, ("longitude", "latitude", "time"))
+    local ncpco2 = defVar(nc, "pCO2", Float64, ("longitude", "latitude", "time"))
     ncpco2.attrib["_FillValue"] = -1e35
 
-    ncuncertainty = defVar(nc, "uncertainty", Float64, ("longitude", "latitude", "time"))
+    local ncuncertainty = defVar(nc, "uncertainty", Float64, ("longitude", "latitude", "time"))
     ncuncertainty.attrib["_FillValue"] = -1e35
 
     nclon[:] = collect(range(CELLSIZE / 2, step=CELLSIZE, stop=360))
