@@ -1,5 +1,6 @@
 using NCDatasets
 using Serialization
+using SharedArrays
 
 const INFILE = "daily.nc"
 const OUTFILE = "pco2_spatial_variation.jldata"
@@ -15,8 +16,8 @@ function run()
 	local timesize::Int64 = size(pco2)[3]
 
 	print("\033[1K\rInitialising data structures...")
-	local variationtotal::Array{Float64, 4} = zeros(lonsize, latsize, lonsize, latsize)
-	local variationcount::Array{Int64, 4} = zeros(lonsize, latsize, lonsize, latsize)
+	local variationtotal::SharedArray{Float64, 4} = zeros(lonsize, latsize, lonsize, latsize)
+	local variationcount::SharedArray{Int64, 4} = zeros(lonsize, latsize, lonsize, latsize)
 
 	local processedcount::Int64 = 0
 
@@ -47,7 +48,7 @@ function run()
 	                for difflon in 1:lonsize
 	                	for difflat in 1:latsize
 	                		local celldiffs = diffs[difflon, difflat, :]
-                			@sync begin
+	                		@sync begin
 	                			@inbounds variationtotal[lonloop, latloop, difflon, difflat] =
 	                				variationtotal[lonloop, latloop, difflon, difflat] + sum(skipmissing(celldiffs))
 	                			@inbounds variationcount[lonloop, latloop, difflon, difflat] =
