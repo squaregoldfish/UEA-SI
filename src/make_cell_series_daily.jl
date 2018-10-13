@@ -1,4 +1,5 @@
 using NCDatasets
+using ProgressMeter
 
 const INFILES = ["SOCATv6.tsv" "SOCATv6_FlagE.tsv"]
 const UNCERTAINTIES = [2.5 10]
@@ -106,6 +107,12 @@ function run()
         # Open input file
         local inchan::IOStream = open(file)
 
+        seekend(inchan)
+        local chansize::Int64 = position(inchan)
+        seekstart(inchan)
+
+        p::Progress = Progress(chansize, 1, "Reading $file")
+
         # Skip the header
         local inheader::Bool = true
         while inheader
@@ -113,6 +120,8 @@ function run()
                 inheader = false
             end
         end
+
+        update!(p, position(inchan))
 
         local currentdataset::String = ""
         local currentcell::Tuple{Int64, Int64} = -1, -1
@@ -123,13 +132,9 @@ function run()
         local currentcount::Int64 = 0
 
         local currentline::String = readline(inchan)
-        local linecount::Int64 = 1
+        update!(p, position(inchan))
         
         while length(currentline) > 0
-            if mod(linecount, 10000) == 0
-                print("\033[1K\r$file $linecount")
-            end
-
             local fields::Array{String, 1} = split(currentline, "\t")
 
             local dataset::String = fields[1]
@@ -176,13 +181,13 @@ function run()
             end
 
             currentline = readline(inchan)
-            linecount = linecount + 1
+            update!(p, position(inchan))
         end
 
         close(inchan)
 
         # The last dataset
-        print("\033[1K\r$file $linecount")
+        update!(p, position(inchan))
         if currentdate != -1
             @inbounds overallcelltotals[currentcell[1], currentcell[2], currentdate] = 
                 overallcelltotals[currentcell[1], currentcell[2], currentdate] + currenttotal / currentcount
