@@ -1,6 +1,14 @@
 using NCDatasets
 using Serialization
 using SharedArrays
+using ProgressMeter
+
+# I had a go at this, but @threads doesn't work
+# because array updates aren't thread safe.
+# We'd have to make a proper @distributed/pmap
+# to make separate small arrays and combine them.
+# Since it's debatable how much time it saves anyway
+# in this program I've not bothered.
 
 const INFILE = "daily.nc"
 const OUTFILE = "pco2_spatial_variation.jldata"
@@ -16,12 +24,12 @@ function run()
 	local timesize::Int64 = size(pco2)[3]
 
 	print("\033[1K\rInitialising data structures...")
-	local variationtotal::SharedArray{Float64, 4} = zeros(lonsize, latsize, lonsize, latsize)
-	local variationcount::SharedArray{Int64, 4} = zeros(lonsize, latsize, lonsize, latsize)
+	local variationtotal::Array{Float64, 4} = zeros(lonsize, latsize, lonsize, latsize)
+	local variationcount::Array{Int64, 4} = zeros(lonsize, latsize, lonsize, latsize)
 
-	local processedcount::Int64 = 0
+	local p::Progress = Progress(timesize, 1, "Calculating spatial variation")
 
-	Threads.@threads for timeloop::Int64 in 1:timesize
+	for timeloop::Int64 in 1:timesize
 		local timemin::Int64 = timeloop - 7
 		if timemin < 1
 			timemin = 1
@@ -33,9 +41,9 @@ function run()
 		end
 
 		for lonloop::Int64 in 1:lonsize
-			for latloop::Int64 in 1:latsize
+			@inbounds for latloop::Int64 in 1:latsize
 
-				@inbounds local currentvalue::Union{Missing, Float64} = pco2[lonloop, latloop, timeloop]
+				local currentvalue::Union{Missing, Float64} = pco2[lonloop, latloop, timeloop]
 				if !ismissing(currentvalue)
 
 	                # Search for other cells with values at the same time.
@@ -44,26 +52,20 @@ function run()
 	                # temper the most optimistic change values we see.
 	                local compare::Array{Union{Missing, Float64}, 3} = pco2[:, :, timemin:timemax]
 	                local diffs::Array{Union{Missing, Float64}, 3} = similar(compare)
-	                @inbounds @. diffs = abs(compare - currentvalue)
+	                @. diffs = abs(compare - currentvalue)
 	                for difflon in 1:lonsize
 	                	for difflat in 1:latsize
 	                		local celldiffs = diffs[difflon, difflat, :]
-	                		@sync begin
-	                			@inbounds variationtotal[lonloop, latloop, difflon, difflat] =
-	                				variationtotal[lonloop, latloop, difflon, difflat] + sum(skipmissing(celldiffs))
-	                			@inbounds variationcount[lonloop, latloop, difflon, difflat] =
-	                				variationcount[lonloop, latloop, difflon, difflat] + sum(@. count(!ismissing(celldiffs)))
-	                		end
+                			variationtotal[lonloop, latloop, difflon, difflat] =
+                				variationtotal[lonloop, latloop, difflon, difflat] + sum(skipmissing(celldiffs))
+                			variationcount[lonloop, latloop, difflon, difflat] =
+                				variationcount[lonloop, latloop, difflon, difflat] + sum(@. count(!ismissing(celldiffs)))
 	                	end
 	                end
 				end
 			end
 		end
-
-		@sync begin
-		    processedcount = processedcount + 1
-			Core.print("\033[1K\rCalculating spatial variation $processedcount / $timesize")
-		end
+		next!(p)
 	end
 
 	print("\033[1K\rCalculating means...")
