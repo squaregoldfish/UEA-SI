@@ -68,6 +68,8 @@ function run()
 		next!(p)
 	end
 
+	finish!(p)
+
 	print("\033[1K\rCalculating means...")
 	local meanvar::Array{Float64, 4} = similar(variationtotal)
 	@inbounds meanvar = variationtotal ./ variationcount

@@ -198,6 +198,8 @@ function run()
             @inbounds overallcellcounts[currentcell[1], currentcell[2], currentdate] = 
                 overallcellcounts[currentcell[1], currentcell[2], currentdate] + 1
         end
+
+        finish!(p)
     end
 
     # Overall cell means
