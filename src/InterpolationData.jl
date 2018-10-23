@@ -3,6 +3,7 @@ using Serialization
 using ProgressMeter
 
 export makeinterpolationbase
+export InterpolationCellBase
 
 const INTERPOLATION_DATA_DIR = "interpolation_data"
 
@@ -13,7 +14,6 @@ struct InterpolationCellBase
 end
 
 mutable struct InterpolationCellData
-
     lonindex::Int64
     latindex::Int64
     finished::Bool
@@ -31,11 +31,10 @@ mutable struct InterpolationCellData
 
         return newobj
     end
-
-end
+end #InterpolationCellData
 
 # Create the array of base data structures for the interpolations
-function makeinterpolationbase(lonsize::Int64, latsize::Int64, timesize::Int64, seamask::Array{Int64, 2})
+function makeinterpolationbase(lonsize::Int64, latsize::Int64, timesize::Int64, seamask::Array{Int64, 2})::Array{InterpolationCellBase, 1}
 
     if isdir(INTERPOLATION_DATA_DIR)
         rm(INTERPOLATION_DATA_DIR, recursive=true)
@@ -59,15 +58,16 @@ function makeinterpolationbase(lonsize::Int64, latsize::Int64, timesize::Int64, 
     end
     finish!(prog)
 
+    return interpolationbase
 end #makeinterpolationbase
 
 # Generate the filename for and InterpolationCellData object
-function getdatafilename(data::InterpolationCellData)
+function getdatafilename(data::InterpolationCellData)::String
     return "$(INTERPOLATION_DATA_DIR)/$(data.lonindex)_$(data.latindex).jldata"
 end
 
 # Generate the filename for and InterpolationCellData object
-function getdatafilename(base::InterpolationCellBase)
+function getdatafilename(base::InterpolationCellBase)::String
     return "$(INTERPOLATION_DATA_DIR)/$(base.lonindex)_$(base.latindex).jldata"
 end
 
@@ -79,7 +79,7 @@ function saveinterpolationdata(data::InterpolationCellData)
 end
 
 # Load an InterpolationCellData object
-function loadinterpolationdata(base::InterpolationCellBase)
+function loadinterpolationdata(base::InterpolationCellBase)::InterpolationCellData
     local inchan::IOStream = open(getdatafilename(base), "r")
     local data::InterpolationCellData = deserialize(inchan)
     close(inchan)
