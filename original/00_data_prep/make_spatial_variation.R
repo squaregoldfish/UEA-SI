@@ -4,7 +4,7 @@ library(ncdf4)
 # PARAMETERS
 PCO2_FILE <- "daily.nc"
 PCO2_VAR <- "pco2"
-TIME_LENGTH <- 11315
+TIME_LENGTH <- 12045
 
 LON_CELL_SIZE <- 2.5
 LAT_CELL_SIZE <- 2.5

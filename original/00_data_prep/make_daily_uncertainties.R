@@ -1,6 +1,6 @@
 # Add uncertainty time series files alongside the actual time series
 SERIES_DIR <- "cell_series_daily"
-SERIES_LENGTH <- 9855
+SERIES_LENGTH <- 12045
 
 for (lon in 1:144) {
 #for (lon in 72:72) {

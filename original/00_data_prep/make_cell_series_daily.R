@@ -35,7 +35,7 @@ getDateIndex <- function(year, month, day) {
     index <- NULL
     day_index = 0
 
-    if (year >= 1985 && year <= 2015) {
+    if (year >= 1985 && year <= 2017) {
         if (isLeapYear(year)) {
             day_index <- getDayIndex(jdate, DAY_STARTS)
         } else {
@@ -85,10 +85,10 @@ getLonCell <- function(lon) {
 
 ###############################################
 
-totals <- array(0, c(144,72,11315))
-counts <- array(0, c(144,72,11315))
+totals <- array(0, c(144,72,12045))
+counts <- array(0, c(144,72,12045))
 
-conn <- file("SOCATv4.tsv",open="r")
+conn <- file("SOCATv6.tsv.noheaders",open="r")
 
 line <- readLines(conn,n=1)
 line_count <- 1
@@ -144,10 +144,10 @@ for (lon in 1:144) {
         cat("\r","Output file",lon,lat)
 
 
-        output <- vector(mode="numeric", length=11315)
+        output <- vector(mode="numeric", length=12045)
         output[output == 0] <- NA
 
-        for (i in 1:11315) {
+        for (i in 1:12045) {
             if (counts[lon, lat, i] > 0) {
                 output[i] <- totals[lon, lat, i] / counts[lon, lat, i]
             }
@@ -178,7 +178,7 @@ for (lon in 1:144) {
         
         out_file <- paste("cell_series_daily/cell_series_",lon,"_",lat,".csv",sep="")
         sink(out_file)
-        for (i in 1:11315) {
+        for (i in 1:12045) {
             cat(i,",",output[i],"\n",sep="")
         }
 

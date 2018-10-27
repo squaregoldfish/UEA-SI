@@ -7,7 +7,7 @@ START_YEAR <- 1985
 LON_SIZE <- 144
 LAT_SIZE <- 72
 VALID_LAT_SIZE <- 72
-TIME_SIZE <- 372
+TIME_SIZE <- 396
 
 
 lons <- vector(mode="numeric", length=LON_SIZE)
@@ -71,6 +71,8 @@ cat("\n")
 lon_dim <- ncdim_def("lon", "degrees_east", lons)
 lat_dim <- ncdim_def("lat", "degrees_north", lats)
 time_dim <- ncdim_def("time", "year", times, unlim=TRUE)
+
+print(times)
 
 pco2_var <- ncvar_def("fco2", "uatm", list(lon_dim, lat_dim, time_dim), -1e35, prec="double")
 uncertainty_var <- ncvar_def("uncertainty", "uatm", list(lon_dim, lat_dim, time_dim), -1e35, prec="double")
