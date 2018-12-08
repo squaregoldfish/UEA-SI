@@ -4,8 +4,8 @@ using Serialization
 include("InterpolationData.jl")
 using .InterpolationData
 
-const PCO2_FILE = "daily.nc"
-const SPATIAL_VARIATION_FILE = "pco2_spatial_variation.jldata"
+const FCO2_FILE = "daily.nc"
+const SPATIAL_VARIATION_FILE = "fco2_spatial_variation.jldata"
 const SEA_FILE = "sea.nc"
 
 function run()
@@ -14,16 +14,16 @@ function run()
 	## LOAD DATA
 	loadprogress::Progress = Progress(6, 1, "Loading data")
 
-	# pCO2 values
-	local lons::Array{Union{Missing, Float32},1} = Dataset(PCO2_FILE)["longitude"][:]
+	# fCO2 values
+	local lons::Array{Union{Missing, Float32},1} = Dataset(FCO2_FILE)["longitude"][:]
 	next!(loadprogress)
-	local lats::Array{Union{Missing, Float32},1} = Dataset(PCO2_FILE)["latitude"][:]
+	local lats::Array{Union{Missing, Float32},1} = Dataset(FCO2_FILE)["latitude"][:]
 	next!(loadprogress)
-	local times::Array{Union{Missing, Float32},1} = Dataset(PCO2_FILE)["time"][:]
+	local times::Array{Union{Missing, Float32},1} = Dataset(FCO2_FILE)["time"][:]
 	next!(loadprogress)
-	local pco2::Array{Union{Missing, Float64}, 3} = Dataset(PCO2_FILE)["pCO2"][:,:,:]
+	local fco2::Array{Union{Missing, Float64}, 3} = Dataset(FCO2_FILE)["fCO2"][:,:,:]
 	next!(loadprogress)
-	local uncertainty::Array{Union{Missing, Float64}, 3} = Dataset(PCO2_FILE)["uncertainty"][:,:,:]
+	local uncertainty::Array{Union{Missing, Float64}, 3} = Dataset(FCO2_FILE)["uncertainty"][:,:,:]
 	next!(loadprogress)
 
 	# Spatial variation

@@ -147,7 +147,7 @@ function run()
             local latitude::Float64 = parse(Float64, fields[12])
             local cellindex::Tuple{Int64, Int64} = getcellindex(longitude, latitude)
 
-            local pco2::Float64 = parse(Float64, fields[24])
+            local fco2::Float64 = parse(Float64, fields[24])
 
             if dataset != currentdataset ||
                 cellindex != currentcell ||
@@ -175,7 +175,7 @@ function run()
 
 
             if dateindex != -1
-                currenttotal = currenttotal + pco2
+                currenttotal = currenttotal + fco2
                 currentuncertaintytotal = currentuncertaintytotal + uncertainty
                 currentcount = currentcount + 1
             end
@@ -204,8 +204,8 @@ function run()
 
     # Overall cell means
     print("\033[1K\rCalculating means...")
-    local meanpco2::Array{Float64, 3} = overallcelltotals ./ overallcellcounts
-    meanpco2 = replace(meanpco2, NaN=>-1e35)
+    local meanfco2::Array{Float64, 3} = overallcelltotals ./ overallcellcounts
+    meanfco2 = replace(meanfco2, NaN=>-1e35)
 
     local meanuncertainty::Array{Float64, 3} = overalluncertaintytotals ./ overallcellcounts
     meanuncertainty = replace(meanuncertainty, NaN=>-1e35)
@@ -226,8 +226,8 @@ function run()
     local nctime = defVar(nc, "time", Float32, ("time",))
     nctime.attrib["calendar"] = "noleap"
 
-    local ncpco2 = defVar(nc, "pCO2", Float64, ("longitude", "latitude", "time"))
-    ncpco2.attrib["_FillValue"] = -1e35
+    local ncfco2 = defVar(nc, "fCO2", Float64, ("longitude", "latitude", "time"))
+    ncfco2.attrib["_FillValue"] = -1e35
 
     local ncuncertainty = defVar(nc, "uncertainty", Float64, ("longitude", "latitude", "time"))
     ncuncertainty.attrib["_FillValue"] = -1e35
@@ -235,7 +235,7 @@ function run()
     nclon[:] = collect(range(CELLSIZE / 2, step=CELLSIZE, stop=360))
     nclat[:] = collect(range(-90 + CELLSIZE / 2, step=CELLSIZE, stop=90))
     nctime[:] = collect(range(STARTYEAR, step=(1/365), stop=(ENDYEAR + 1) - (1/365)))
-    ncpco2[:,:,:] = meanpco2
+    ncfco2[:,:,:] = meanfco2
     ncuncertainty[:,:,:] = meanuncertainty
 
     close(nc)

@@ -11,17 +11,17 @@ using ProgressMeter
 # in this program I've not bothered.
 
 const INFILE = "daily.nc"
-const OUTFILE = "pco2_spatial_variation.jldata"
+const OUTFILE = "fco2_spatial_variation.jldata"
 
 function run()
 	print("Loading input data...")
 	local lons::Array{Union{Missing, Float32},1} = Dataset(INFILE)["longitude"][:]
 	local lats::Array{Union{Missing, Float32},1} = Dataset(INFILE)["latitude"][:]
-	local pco2::Array{Union{Missing, Float64}, 3} = Dataset(INFILE)["pCO2"][:,:,:]
+	local fco2::Array{Union{Missing, Float64}, 3} = Dataset(INFILE)["fCO2"][:,:,:]
 
 	local lonsize::Int64 = length(lons)
 	local latsize::Int64 = length(lats)
-	local timesize::Int64 = size(pco2)[3]
+	local timesize::Int64 = size(fco2)[3]
 
 	print("\033[1K\rInitialising data structures...")
 	local variationtotal::Array{Float64, 4} = zeros(lonsize, latsize, lonsize, latsize)
@@ -43,14 +43,14 @@ function run()
 		for lonloop::Int64 in 1:lonsize
 			@inbounds for latloop::Int64 in 1:latsize
 
-				local currentvalue::Union{Missing, Float64} = pco2[lonloop, latloop, timeloop]
+				local currentvalue::Union{Missing, Float64} = fco2[lonloop, latloop, timeloop]
 				if !ismissing(currentvalue)
 
 	                # Search for other cells with values at the same time.
 	                # Note that we include values from a 7 timesteps either side too,
 	                # just to increase the amount of data we can use. It should also
 	                # temper the most optimistic change values we see.
-	                local compare::Array{Union{Missing, Float64}, 3} = pco2[:, :, timemin:timemax]
+	                local compare::Array{Union{Missing, Float64}, 3} = fco2[:, :, timemin:timemax]
 	                local diffs::Array{Union{Missing, Float64}, 3} = similar(compare)
 	                @. diffs = abs(compare - currentvalue)
 	                for difflon in 1:lonsize
