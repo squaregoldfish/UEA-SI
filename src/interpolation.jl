@@ -38,7 +38,7 @@ function run()
 
 	######################################
 	## SET UP DATA STRUCTURES
-	local interpolationbase::Array{InterpolationCellBase, 1} = makeinterpolationbase(length(lons), length(lats), length(times), seamask)
+	local cells::Array{Cell, 1} = makecells(length(lons), length(lats), length(times), seamask)
 
 
 	print("\n")
