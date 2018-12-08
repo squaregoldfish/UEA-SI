@@ -5,7 +5,7 @@ using ProgressMeter
 export Cell
 export makecells
 
-const Cell = Pair{Int64, Int64}
+const Cell = NamedTuple{(:lon, :lat), Tuple{Int64, Int64}}
 const INTERPOLATION_DATA_DIR = "interpolation_data"
 
 mutable struct InterpolationCellData
@@ -25,18 +25,10 @@ mutable struct InterpolationCellData
 
         return newobj
     end
-
-    function lonindex()
-        cell[0]
-    end
-
-    function latindex()
-        cell[1]
-    end
 end #InterpolationCellData
 
 # Create the array of base data structures for the interpolations
-function makecells(lonsize::Int64, latsize::Int64, timesize::Int64, seamask::Array{Int64, 2})::Array{Pair, 1}
+function makecells(lonsize::Int64, latsize::Int64, timesize::Int64, seamask::Array{Int64, 2})::Array{Cell, 1}
 
     if isdir(INTERPOLATION_DATA_DIR)
         rm(INTERPOLATION_DATA_DIR, recursive=true)
@@ -52,7 +44,7 @@ function makecells(lonsize::Int64, latsize::Int64, timesize::Int64, seamask::Arr
         for j in 1:latsize
             counter = counter + 1
 
-            cells[counter] = Cell(i, j)
+            cells[counter] = makecell(i, j)
             interpolationdata::InterpolationCellData = InterpolationCellData(cells[counter], timesize)
             saveinterpolationdata(interpolationdata)
         end
@@ -65,7 +57,7 @@ end #makeinterpolationbase
 
 # Generate the filename for and InterpolationCellData object
 function getdatafilename(data::InterpolationCellData)::String
-    return "$(INTERPOLATION_DATA_DIR)/$(lonindex(data))_$(latindex(data)).jldata"
+    return "$(INTERPOLATION_DATA_DIR)/$(data.cell.lon)_$(data.cell.lat).jldata"
 end
 
 # Save an InterpolationCellData object to disk
@@ -91,4 +83,7 @@ function latindex(data::InterpolationCellData)::Int64
     data.cell.second
 end
 
+function makecell(lonindex::Int64, latindex::Int64)::Cell
+    (lon=lonindex, lat=latindex)
+end
 end #module
