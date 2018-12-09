@@ -14,7 +14,7 @@ function run()
 	
 	#####################################
 	## LOAD DATA
-	loadprogress::Progress = Progress(6, 1, "Loading data")
+	loadprogress::Progress = Progress(6, 1, "Loading data...")
 
 	# fCO2 values
 	local lons::Array{Union{Missing, Float32},1} = Dataset(FCO2_FILE)["longitude"][:]
@@ -41,6 +41,21 @@ function run()
 	######################################
 	## SET UP DATA STRUCTURES
 	local cells::Array{Cell, 1} = makecells(length(lons), length(lats), length(times), seamask, fco2, uncertainty)
+
+	######################################
+	# NOW THE PROCESSING
+	#
+	# Repeatedly process all cells until the number of finished cells stablises
+	local finishedarray::Array{Bool, 1} = falses(length(cells))
+	local lastfinishedcount::Int64 = 0
+
+	while lastfinishedcount == 0 || lastfinishedcount != sum(finishedarray .== true)
+		lastfinishedcount = sum(finishedarray .== true)
+		finishedarray = @showprogress 1 "Interpolating cells..." pmap(x -> interpolatecell(x), cells)
+		println("Finished cells: $(sum(finishedarray .== true))")
+	end
+
+	println("Final finished count: $lastfinishedcount")
 
 	print("\n")
 end
