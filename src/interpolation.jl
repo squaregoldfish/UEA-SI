@@ -1,8 +1,9 @@
+using Distributed
 using NCDatasets
 using ProgressMeter
 using Serialization
-include("InterpolationData.jl")
-using .InterpolationData
+@everywhere include("InterpolationData.jl")
+@everywhere using .InterpolationData
 
 const FCO2_FILE = "daily.nc"
 const SPATIAL_VARIATION_FILE = "fco2_spatial_variation.jldata"

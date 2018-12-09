@@ -1,6 +1,7 @@
 module InterpolationData
 using Serialization
 using ProgressMeter
+using Distributed
 
 export Cell
 export makecells
@@ -36,24 +37,26 @@ function makecells(lonsize::Int64, latsize::Int64, timesize::Int64, seamask::Arr
 
     mkdir(INTERPOLATION_DATA_DIR)
 
-    local cells::Array{Cell, 1} = Array{Cell, 1}(undef, lonsize * latsize)
-
-    local counter::Int64 = 0
-    local prog::Progress = Progress(lonsize, 1, "Preparing data structures")
-    for i in 1:lonsize
-        for j in 1:latsize
-            counter = counter + 1
-
-            cells[counter] = makecell(i, j)
-            interpolationdata::InterpolationCellData = InterpolationCellData(cells[counter], timesize)
-            saveinterpolationdata(interpolationdata)
-        end
-        next!(prog)
-    end
-    finish!(prog)
+    println("Initialising working data...")
+    local cells::Array{Cell, 1} = @showprogress pmap((x) -> makeinterpolationdata(x, lonsize, latsize, timesize), (range(1, length=lonsize*latsize)))
 
     return cells
-end #makeinterpolationbase
+end #makecells
+
+function makeinterpolationdata(cellindex::Int64, lonsize::Int64, latsize::Int64, timesize::Int64)
+    local lonindex::Int64 = floor(cellindex / latsize) + 1
+    local latindex::Int64 = mod(cellindex, latsize)
+    if latindex == 0
+        latindex = 72
+        lonindex -= 1
+    end
+
+    local cell::Cell = makecell(lonindex, latindex)
+    local interpolationdata::InterpolationCellData = InterpolationCellData(cell, timesize)
+    #saveinterpolationdata(interpolationdata)
+
+    return cell
+end
 
 # Generate the filename for and InterpolationCellData object
 function getdatafilename(data::InterpolationCellData)::String
@@ -73,14 +76,6 @@ function loadinterpolationdata(cell::Cell)::InterpolationCellData
     local data::InterpolationCellData = deserialize(inchan)
     close(inchan)
     return data
-end
-
-function lonindex(data::InterpolationCellData)::Int64
-    data.cell.first
-end
-
-function latindex(data::InterpolationCellData)::Int64
-    data.cell.second
 end
 
 function makecell(lonindex::Int64, latindex::Int64)::Cell
