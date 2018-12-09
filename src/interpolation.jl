@@ -2,6 +2,7 @@ using Distributed
 using NCDatasets
 using ProgressMeter
 using Serialization
+
 @everywhere include("InterpolationData.jl")
 @everywhere using .InterpolationData
 
@@ -34,13 +35,12 @@ function run()
 	next!(loadprogress)
 
 	# Sea mask
-	local seamask::Array{Int64, 2} = convert.(Int64, Dataset(SEA_FILE)["SEA"][:,:])
+	local seamask::Array{Int8, 2} = convert.(Int8, Dataset(SEA_FILE)["SEA"][:,:])
 	finish!(loadprogress)
 
 	######################################
 	## SET UP DATA STRUCTURES
-	local cells::Array{Cell, 1} = makecells(length(lons), length(lats), length(times), seamask)
-
+	local cells::Array{Cell, 1} = makecells(length(lons), length(lats), length(times), seamask, fco2, uncertainty)
 
 	print("\n")
 end
