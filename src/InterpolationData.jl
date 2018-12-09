@@ -2,6 +2,7 @@ module InterpolationData
 using Distributed
 using ProgressMeter
 using Serialization
+using Logging
 
 export Cell
 export makecells
@@ -74,10 +75,41 @@ function makeinterpolationdata(cellindex::Int64, lonsize::Int64, latsize::Int64,
     return cell
 end
 
-# Perform the central interpolation for a cell
-function interpolatecell(cell::Cell)
+# Perform the main interpolation for a cell
+function interpolatecell(cell::Cell, interpolationstep::Int8)
     data::InterpolationCellData = _loadinterpolationdata(cell)
+    
+    if !data.finished
+        local logger::Tuple{SimpleLogger, IOStream} = _makelogger(cell, interpolationstep)
+        interpolate!(data, interpolationstep, logger[1])
+        _closelogger(logger[2])
+    end
+
     return data.finished
+end
+
+# Perform interpolation
+function interpolate!(data::InterpolationCellData, step::Int8, logger::SimpleLogger)
+    with_logger(logger) do
+        @info("Logging!")
+    end
+end
+
+###############################################################
+#
+# Simple utility methods
+
+# Initialise a logger for a cell and interpolation run
+function _makelogger(cell::Cell, interpolationstep::Int8)::Tuple{SimpleLogger, IOStream}
+    logfile::String = "$(INTERPOLATION_DATA_DIR)/$(cell.lon)_$(cell.lat)_$(interpolationstep).log"
+    io::IOStream = open(logfile, "w")
+    logger::SimpleLogger = SimpleLogger(io, Logging.Debug, Dict{Any,Int64}())
+    return (logger, io)
+end
+
+# Close a logger's IO stream
+function _closelogger(io::IOStream)
+    close(io)
 end
 
 # Generate the filename for an InterpolationCellData object

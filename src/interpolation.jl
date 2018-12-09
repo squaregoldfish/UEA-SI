@@ -48,10 +48,12 @@ function run()
 	# Repeatedly process all cells until the number of finished cells stablises
 	local finishedarray::Array{Bool, 1} = falses(length(cells))
 	local lastfinishedcount::Int64 = 0
+	local interpolationstep::Int8 = 0
 
 	while lastfinishedcount == 0 || lastfinishedcount != sum(finishedarray .== true)
 		lastfinishedcount = sum(finishedarray .== true)
-		finishedarray = @showprogress 1 "Interpolating cells..." pmap(x -> interpolatecell(x), cells)
+		interpolationstep += 1
+		finishedarray = @showprogress 1 "Interpolating cells..." pmap(x -> interpolatecell(x, interpolationstep), cells)
 		println("Finished cells: $(sum(finishedarray .== true))")
 	end
 
