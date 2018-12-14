@@ -18,8 +18,10 @@ mutable struct InterpolationCellData
     fitparams::Array{Float64, 1}
     originalinputseries::Array{Union{Missing, Float64}, 1}
     originalinputuncertainties::Array{Union{Missing, Float64}, 1}
+    originalinputweights::Array{Union{Missing, Float64}, 1}
     paraminputseries::Array{Union{Missing, Float64}, 1}
     paraminputuncertainties::Array{Union{Missing, Float64}, 1}
+    paraminputweights::Array{Union{Missing, Float64}, 1}
 
     function InterpolationCellData(cell::Cell, timesize::Int64, island::Bool, fco2::Array{Union{Missing, Float64}, 1},
         uncertainty::Array{Union{Missing, Float64}, 1})
@@ -29,10 +31,15 @@ mutable struct InterpolationCellData
         newobj.land = island
         newobj.finished = island # If the cell is on land, we've already finished
         newobj.fitparams = Array{Float64, 1}(undef, 5)
+
         newobj.originalinputseries = fco2
         newobj.originalinputuncertainties = uncertainty
-        newobj.paraminputseries = newobj.originalinputseries
-        newobj.paraminputuncertainties = newobj.originalinputuncertainties
+        newobj.originalinputweights = newobj.originalinputuncertainties
+        replace!(newobj.originalinputweights, !ismissing=>1.0)
+
+        newobj.paraminputseries = copy(newobj.originalinputseries)
+        newobj.paraminputuncertainties = copy(newobj.originalinputuncertainties)
+        newobj.paraminputweights = copy(newobj.originalinputweights)
 
         return newobj
     end
@@ -42,11 +49,11 @@ end #InterpolationCellData
 function makecells(lonsize::Int64, latsize::Int64, timesize::Int64, seamask::Array{Int8, 2},
     fco2::Array{Union{Missing, Float64}, 3}, uncertainty::Array{Union{Missing, Float64}, 3})::Array{Cell, 1}
 
-    #if isdir(INTERPOLATION_DATA_DIR)
-    #    rm(INTERPOLATION_DATA_DIR, recursive=true)
-    #end
+    if isdir(INTERPOLATION_DATA_DIR)
+        rm(INTERPOLATION_DATA_DIR, recursive=true)
+    end
 
-    #mkdir(INTERPOLATION_DATA_DIR)
+    mkdir(INTERPOLATION_DATA_DIR)
 
     local cells::Array{Cell, 1} = Array{Cell, 1}(undef, lonsize * latsize)
     @showprogress 1 "Initialising working data..." for i in 1:(lonsize * latsize)
@@ -70,7 +77,7 @@ function makeinterpolationdata(cellindex::Int64, lonsize::Int64, latsize::Int64,
     local cell::Cell = _makecell(lonindex, latindex)
     local land::Bool = seamask[cell.lon, cell.lat] == 0
     local interpolationdata::InterpolationCellData = InterpolationCellData(cell, timesize, land, fco2[cell.lon, cell.lat, :], uncertainty[cell.lon, cell.lat, :])
-    #_saveinterpolationdata(interpolationdata)
+    _saveinterpolationdata(interpolationdata)
 
     return cell
 end
