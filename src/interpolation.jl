@@ -2,6 +2,7 @@ using Distributed
 using NCDatasets
 using ProgressMeter
 using Serialization
+using DelimitedFiles
 
 @everywhere include("InterpolationData.jl")
 @everywhere using .InterpolationData
@@ -9,38 +10,53 @@ using Serialization
 const FCO2_FILE = "daily.nc"
 const SPATIAL_VARIATION_FILE = "fco2_spatial_variation.jldata"
 const SEA_FILE = "sea.nc"
+const SPATIAL_ACFS_FILE = "mean_directional_acfs.nc"
+const TEMPORAL_ACFS_FILE = "mean_temporal_acf.csv"
 
 function run()
 	
 	#####################################
 	## LOAD DATA
-#	loadprogress::Progress = Progress(6, 1, "Loading data...")
+	loadprogress::Progress = Progress(8, 1, "Loading data...")
 
 	# fCO2 values
-#	local lons::Array{Union{Missing, Float32},1} = Dataset(FCO2_FILE)["longitude"][:]
-#	next!(loadprogress)
-#	local lats::Array{Union{Missing, Float32},1} = Dataset(FCO2_FILE)["latitude"][:]
-#	next!(loadprogress)
-#	local times::Array{Union{Missing, Float32},1} = Dataset(FCO2_FILE)["time"][:]
-#	next!(loadprogress)
-#	local fco2::Array{Union{Missing, Float64}, 3} = Dataset(FCO2_FILE)["fCO2"][:,:,:]
-#	next!(loadprogress)
-#	local uncertainty::Array{Union{Missing, Float64}, 3} = Dataset(FCO2_FILE)["uncertainty"][:,:,:]
-#	next!(loadprogress)
+	local lons::Array{Union{Missing, Float32},1} = Dataset(FCO2_FILE)["longitude"][:]
+	next!(loadprogress)
+	local lats::Array{Union{Missing, Float32},1} = Dataset(FCO2_FILE)["latitude"][:]
+	next!(loadprogress)
+	local times::Array{Union{Missing, Float32},1} = Dataset(FCO2_FILE)["time"][:]
+	next!(loadprogress)
+	local fco2::Array{Union{Missing, Float64}, 3} = Dataset(FCO2_FILE)["fCO2"][:,:,:]
+	next!(loadprogress)
+	local uncertainty::Array{Union{Missing, Float64}, 3} = Dataset(FCO2_FILE)["uncertainty"][:,:,:]
+	next!(loadprogress)
 
 	# Spatial variation
-#	local inchan::IOStream = open(SPATIAL_VARIATION_FILE, "r")
-#	local spatialvariation::Array{Float64, 4} = deserialize(inchan)
-#	close(inchan)
-#	next!(loadprogress)
+	local inchan::IOStream = open(SPATIAL_VARIATION_FILE, "r")
+	local spatialvariation::Array{Float64, 4} = deserialize(inchan)
+	close(inchan)
+	next!(loadprogress)
 
 	# Sea mask
-#	local seamask::Array{Int8, 2} = convert.(Int8, Dataset(SEA_FILE)["SEA"][:,:])
-#	finish!(loadprogress)
+	local seamask::Array{Int8, 2} = convert.(Int8, Dataset(SEA_FILE)["SEA"][:,:])
+	next!(loadprogress)
+
+	# Autocorrelation data
+	local spatial_acfs::Array{Union{Missing, Float64}, 4} = Dataset(SPATIAL_ACFS_FILE)["mean_directional_acfs"][:,:,:,:]
+	next!(loadprogress)
+
+	local temporal_acf::Array{Float64, 1} = readdlm(TEMPORAL_ACFS_FILE, ',', Float64, '\n')[:,2]
+	finish!(loadprogress)
 
 	######################################
 	## SET UP DATA STRUCTURES
-#	local cells::Array{Cell, 1} = makecells(length(lons), length(lats), length(times), seamask, fco2, uncertainty)
+	#local cells::Array{Cell, 1} = makecells(length(lons), length(lats), length(times), seamask, fco2, uncertainty)
+	
+	######################################
+	## REMOVE UNNEEDED DATA
+	fco2 = zeros(1, 1, 1)
+	uncertainty = zeros(1, 1, 1)
+	seamask = zeros(1, 1)
 
 	######################################
 	# NOW THE PROCESSING
