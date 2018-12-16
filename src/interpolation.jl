@@ -1,3 +1,6 @@
+# Indicates whether the processing data should be initialised from scratch
+const __INIT_DATA__ = false
+
 using Distributed
 using NCDatasets
 using ProgressMeter
@@ -14,31 +17,38 @@ const SPATIAL_ACFS_FILE = "mean_directional_acfs.nc"
 const TEMPORAL_ACFS_FILE = "mean_temporal_acf.csv"
 
 function run()
-	
+
 	#####################################
 	## LOAD DATA
-	loadprogress::Progress = Progress(8, 1, "Loading data...")
+	local loadprogress = Progress(3, 1, "Loading data...")
+	if __INIT_DATA__
+		loadprogress::Progress = Progress(8, 1, "Loading data...")
+	end
 
 	# fCO2 values
-	local lons::Array{Union{Missing, Float32},1} = Dataset(FCO2_FILE)["longitude"][:]
-	next!(loadprogress)
-	local lats::Array{Union{Missing, Float32},1} = Dataset(FCO2_FILE)["latitude"][:]
-	next!(loadprogress)
-	local times::Array{Union{Missing, Float32},1} = Dataset(FCO2_FILE)["time"][:]
-	next!(loadprogress)
-	local fco2::Array{Union{Missing, Float64}, 3} = Dataset(FCO2_FILE)["fCO2"][:,:,:]
-	next!(loadprogress)
-	local uncertainty::Array{Union{Missing, Float64}, 3} = Dataset(FCO2_FILE)["uncertainty"][:,:,:]
-	next!(loadprogress)
+	if __INIT_DATA__
+		local lons::Array{Union{Missing, Float32},1} = Dataset(FCO2_FILE)["longitude"][:]
+		next!(loadprogress)
+		local lats::Array{Union{Missing, Float32},1} = Dataset(FCO2_FILE)["latitude"][:]
+		next!(loadprogress)
+		local times::Array{Union{Missing, Float32},1} = Dataset(FCO2_FILE)["time"][:]
+		next!(loadprogress)
+		local fco2::Array{Union{Missing, Float64}, 3} = Dataset(FCO2_FILE)["fCO2"][:,:,:]
+		next!(loadprogress)
+		local uncertainty::Array{Union{Missing, Float64}, 3} = Dataset(FCO2_FILE)["uncertainty"][:,:,:]
+		next!(loadprogress)
+	end
+
+	# Sea mask
+	if __INIT_DATA__
+		local seamask::Array{Int8, 2} = convert.(Int8, Dataset(SEA_FILE)["SEA"][:,:])
+		next!(loadprogress)
+	end
 
 	# Spatial variation
 	local inchan::IOStream = open(SPATIAL_VARIATION_FILE, "r")
 	local spatialvariation::Array{Float64, 4} = deserialize(inchan)
 	close(inchan)
-	next!(loadprogress)
-
-	# Sea mask
-	local seamask::Array{Int8, 2} = convert.(Int8, Dataset(SEA_FILE)["SEA"][:,:])
 	next!(loadprogress)
 
 	# Autocorrelation data
@@ -50,13 +60,17 @@ function run()
 
 	######################################
 	## SET UP DATA STRUCTURES
-	#local cells::Array{Cell, 1} = makecells(length(lons), length(lats), length(times), seamask, fco2, uncertainty)
-	
+	if __INIT_DATA__
+		local cells::Array{Cell, 1} = makecells(length(lons), length(lats), length(times), seamask, fco2, uncertainty)
+	end
+
 	######################################
 	## REMOVE UNNEEDED DATA
-	fco2 = zeros(1, 1, 1)
-	uncertainty = zeros(1, 1, 1)
-	seamask = zeros(1, 1)
+	if __INIT_DATA__
+		fco2 = zeros(1, 1, 1)
+		uncertainty = zeros(1, 1, 1)
+		seamask = zeros(1, 1)
+	end
 
 	######################################
 	# NOW THE PROCESSING
