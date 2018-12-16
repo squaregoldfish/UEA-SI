@@ -1,5 +1,5 @@
 # Indicates whether the processing data should be initialised from scratch
-const __INIT_DATA__ = false
+const __INIT_DATA__ = true
 
 using Distributed
 using NCDatasets
@@ -20,17 +20,21 @@ function run()
 
 	#####################################
 	## LOAD DATA
-	local loadprogress = Progress(3, 1, "Loading data...")
+	local loadcount::Int64 = 0
 	if __INIT_DATA__
-		loadprogress::Progress = Progress(8, 1, "Loading data...")
+		loadcount = 8
+	else
+		loadcount = 5
 	end
+	local loadprogress::Progress = Progress(loadcount, 1, "Loading data...")
 
 	# fCO2 values
+	local lons::Array{Union{Missing, Float32},1} = Dataset(FCO2_FILE)["longitude"][:]
+	next!(loadprogress)
+	local lats::Array{Union{Missing, Float32},1} = Dataset(FCO2_FILE)["latitude"][:]
+	next!(loadprogress)
+
 	if __INIT_DATA__
-		local lons::Array{Union{Missing, Float32},1} = Dataset(FCO2_FILE)["longitude"][:]
-		next!(loadprogress)
-		local lats::Array{Union{Missing, Float32},1} = Dataset(FCO2_FILE)["latitude"][:]
-		next!(loadprogress)
 		local times::Array{Union{Missing, Float32},1} = Dataset(FCO2_FILE)["time"][:]
 		next!(loadprogress)
 		local fco2::Array{Union{Missing, Float64}, 3} = Dataset(FCO2_FILE)["fCO2"][:,:,:]
@@ -60,8 +64,11 @@ function run()
 
 	######################################
 	## SET UP DATA STRUCTURES
+	local cells::Array{Cell, 1} = []
 	if __INIT_DATA__
-		local cells::Array{Cell, 1} = makecells(length(lons), length(lats), length(times), seamask, fco2, uncertainty)
+		cells = makecells(length(lons), length(lats), length(times), seamask, fco2, uncertainty)
+	else
+		cells = makecells(length(lons), length(lats))
 	end
 
 	######################################

@@ -45,6 +45,17 @@ mutable struct InterpolationCellData
     end
 end #InterpolationCellData
 
+# Create the cell objects without initialising the corresponding data structures
+# Useful during development
+function makecells(lonsize::Int64, latsize::Int64)::Array{Cell, 1}
+    local cells::Array{Cell, 1} = Array{Cell, 1}(undef, lonsize * latsize)
+    for i in 1:(lonsize * latsize)
+        cells[i] = _makecell(i, lonsize, latsize)
+    end
+
+    return cells
+end
+
 # Create the array of base data structures for the interpolations
 function makecells(lonsize::Int64, latsize::Int64, timesize::Int64, seamask::Array{Int8, 2},
     fco2::Array{Union{Missing, Float64}, 3}, uncertainty::Array{Union{Missing, Float64}, 3})::Array{Cell, 1}
@@ -65,8 +76,18 @@ end #_makecells
 
 # Generate the basic interpolation data
 function makeinterpolationdata(cellindex::Int64, lonsize::Int64, latsize::Int64, seamask::Array{Int8, 2}, timesize::Int64,
-    fco2::Array{Union{Missing, Float64}, 3}, uncertainty::Array{Union{Missing, Float64}, 3})
+    fco2::Array{Union{Missing, Float64}, 3}, uncertainty::Array{Union{Missing, Float64}, 3})::Cell
 
+    local cell::Cell = _makecell(cellindex, lonsize, latsize)
+    local land::Bool = seamask[cell.lon, cell.lat] == 0
+    local interpolationdata::InterpolationCellData = InterpolationCellData(cell, timesize, land, fco2[cell.lon, cell.lat, :], uncertainty[cell.lon, cell.lat, :])
+    _saveinterpolationdata(interpolationdata)
+
+    return cell
+end
+
+# Create a cell without generating the interpolation data
+function _makecell(cellindex::Int64, lonsize::Int64, latsize::Int64)::Cell
     local lonindex::Int64 = floor(cellindex / latsize) + 1
     local latindex::Int64 = mod(cellindex, latsize)
     if latindex == 0
@@ -74,13 +95,9 @@ function makeinterpolationdata(cellindex::Int64, lonsize::Int64, latsize::Int64,
         lonindex -= 1
     end
 
-    local cell::Cell = _makecell(lonindex, latindex)
-    local land::Bool = seamask[cell.lon, cell.lat] == 0
-    local interpolationdata::InterpolationCellData = InterpolationCellData(cell, timesize, land, fco2[cell.lon, cell.lat, :], uncertainty[cell.lon, cell.lat, :])
-    _saveinterpolationdata(interpolationdata)
-
-    return cell
+    return (lon=lonindex, lat=latindex)
 end
+
 
 # Perform the main interpolation for a cell
 function interpolatecell(cell::Cell, interpolationstep::Int8)
@@ -142,9 +159,5 @@ function _loadinterpolationdata(cell::Cell)::InterpolationCellData
     local data::InterpolationCellData = deserialize(inchan)
     close(inchan)
     return data
-end
-
-function _makecell(lonindex::Int64, latindex::Int64)::Cell
-    (lon=lonindex, lat=latindex)
 end
 end #module
