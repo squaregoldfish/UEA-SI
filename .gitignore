@@ -5,4 +5,4 @@ mean_directional_acfs.nc
 mean_temporal_acf.csv
 *.jldata
 src/interpolation_data*
-
+Icon*
