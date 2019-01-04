@@ -1,5 +1,6 @@
 # Indicates whether the processing data should be initialised from scratch
-const __INIT_DATA__ = true
+# For use during development. In production, this should be true
+const __INIT_DATA__ = false
 
 using Distributed
 using NCDatasets

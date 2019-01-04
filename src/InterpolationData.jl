@@ -3,6 +3,7 @@ using Distributed
 using ProgressMeter
 using Serialization
 using Logging
+using Statistics
 
 export Cell
 export makecells
@@ -10,6 +11,12 @@ export interpolatecell
 
 const Cell = NamedTuple{(:lon, :lat), Tuple{Int64, Int64}}
 const INTERPOLATION_DATA_DIR = "interpolation_data"
+
+# Limits
+const MAX_STDEV = 75.0
+const MIN_TIME_SPAN = 1825 # 5 years
+const MONTH_END_DAYS = [31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334, 365]
+const MIN_POPULATED_MONTHS = 8
 
 mutable struct InterpolationCellData
     cell::Cell
@@ -115,8 +122,124 @@ end
 # Perform interpolation
 function interpolate!(data::InterpolationCellData, step::Int8, logger::SimpleLogger)
     with_logger(logger) do
-        @info("Logging!")
+        
+        local fitfound::Bool = false
+        local continuefit::Bool = true
+        local spatialinterpolationcount::Int8 = 0
+
+        # Variables for processing (empty placeholders)
+        local currentseries::Array{Union{Missing, Float64}, 1} = Array{Union{Missing, Float64}, 1}()
+        local currentuncertainties::Array{Union{Missing, Float64}, 1} = currentseries
+        local currentweights::Array{Union{Missing, Float64}, 1} = currentseries
+        local currentcurve::Array{Union{Missing, Float64}, 1} = currentseries
+
+        while continuefit
+            local attemptcurvefit::Bool = true
+
+            # Put together the series for the curve fit
+            if spatialinterpolationcount <= 0
+                # Just use the original series as is
+                currentseries = deepcopy(data.originalinputseries)
+                currentuncertainties = deepcopy(data.originalinputuncertainties)
+                currentweights = deepcopy(data.originalinputweights)
+            else
+                # Need to do spatial interpolation
+                println("Must do spatial interpolation.")
+                exit()
+            end
+
+            if continuefit
+                if attemptcurvefit
+                    currentcurve = attemptfit(currentseries, currentweights, currentuncertainties)
+                    if length(currentcurve) > 0
+                        println("Fit achieved")
+                    else
+                        println("Fit failed")
+                    end
+                end
+            end
+        end
     end
+end
+
+function attemptfit(series::Array{Union{Missing, Float64}, 1}, weights::Array{Union{Missing, Float64}, 1}, uncertainties::Array{Union{Missing, Float64}, 1})::Array{Union{Missing, Float64}, 1}
+    local successfulparams::Array{Float64, 1} = Array{Float64, 1}()
+
+    local fittedparams::Array{Float64, 1} = fitcurve(series, weights)
+
+
+end
+
+function fitcurve(series::Array{Union{Missing, Float64}, 1}, weights::Array{Union{Missing, Float64}, 1})::Array{Float64, 1}
+    local fitseries::Array{Union{Missing, Float64}, 1} = removeoutliers(series)
+    if !doprefitcheck(fitseries)
+        @info("PREFIT CHECKS FAILED")
+    else
+        println("I can continue")
+    end
+
+    exit()
+
+end
+
+function removeoutliers(series::Array{Union{Missing, Float64}, 1})::Array{Union{Missing, Float64}, 1}
+    local filteredseries::Array{Union{Missing, Float64}, 1} = Array{Union{Missing, Float64}, 1}(missing, length(series))
+
+    local meanvalue::Float64 = mean(skipmissing(series))
+    local stdev::Float64 = std(skipmissing(series), mean=meanvalue)
+
+    for i in 1:length(series)
+        if !ismissing(series[i])
+            local stdevsfrommean::Float64 = abs(series[i] - meanvalue) / stdev
+            if stdevsfrommean < 3.0
+                filteredseries[i] = series[i]
+            end
+        end
+    end
+
+    @debug("Removed $(_countvalues(series) - _countvalues(filteredseries)) outliers")
+    filteredseries
+end
+
+function doprefitcheck(series::Array{Union{Missing, Float64}, 1})::Bool
+    local ok::Bool = true
+
+    # Standard deviation
+    local stdev = std(skipmissing(series))
+    if stdev > MAX_STDEV
+        @info("Standard deviation is $stdev, should be <= $MAX_STDEV")
+        ok = false
+    end
+
+    # Minimum time coverage
+    local missingdays::Array{Int64, 1} = findall(!ismissing, series)
+    local dayspan::Int64 = missingdays[end] - missingdays[1]
+    if dayspan < MIN_TIME_SPAN
+        @info("Measurements must span at least $MIN_TIME_SPAN days (only has $dayspan)")
+        ok = false
+    end
+
+    # Populated months
+    if ok
+        local populatedmonths::Array{Bool, 1} = falses(12)
+        for i in 1:length(series)
+            if !ismissing(series[i])
+                local day::Int16 = mod(i, 365)
+                if day == 0
+                    day = 365
+                end
+
+                populatedmonths[findall(day .≤ MONTH_END_DAYS)[1]] = true
+            end
+        end
+
+        local populatedmonthcount::Int8 = sum(populatedmonths)
+        if populatedmonthcount < MIN_POPULATED_MONTHS
+            @info("Should have at least $MIN_POPULATED_MONTHS populated months (only has $populatedmonthcount)")
+        end
+    end
+
+    ok
 end
 
 ###############################################################
@@ -159,5 +282,10 @@ function _loadinterpolationdata(cell::Cell)::InterpolationCellData
     local data::InterpolationCellData = deserialize(inchan)
     close(inchan)
     return data
+end
+
+# Count the number of non-missing values in a series
+function _countvalues(series::Array{Union{Missing, Float64}, 1})::Int64
+    length(collect(skipmissing(series)))
 end
 end #module
