@@ -158,6 +158,16 @@ mutable struct SeriesData
         newobj.curveparams = Array{Float64, 1}()
         newobj
     end
+
+    function SeriesData(series::SeriesData)
+        newobj::SeriesData = new()
+        newobj.measurements = deepcopy(series.measurements)
+        newobj.uncertainties = deepcopy(series.uncertainties)
+        newobj.weights = deepcopy(series.weights)
+        newobj.curve = deepcopy(series.curve)
+        newobj.curveparams = deepcopy(series.curveparams)
+        newobj
+    end
 end
 
 # Perform interpolation
@@ -166,10 +176,15 @@ function interpolate!(data::InterpolationCellData, step::UInt8, logger::SimpleLo
 
         local fitfound::Bool = false
         local continuefit::Bool = true
+
         local spatialinterpolationcount::UInt8 = 0
+        local spatialinterpolationcells::Array{Cell, 1} = Array{Cell, 1}()
 
         # Variables for processing (empty placeholders)
         local currentseries::SeriesData = SeriesData()
+
+        # Temporary storage used while trying extra interpolations
+        local storedseries::SeriesData = SeriesData()
 
         while continuefit
             local attemptcurvefit::Bool = true
@@ -189,10 +204,50 @@ function interpolate!(data::InterpolationCellData, step::UInt8, logger::SimpleLo
             if continuefit
                 if attemptcurvefit
                     attemptfit!(currentseries)
+
                     if length(currentseries.curve) > 0
-                        println("Fit achieved")
-                    else
-                        println("Fit failed")
+                        fitfound = true
+
+                        if length(storedseries.curve) == 0
+                            # No previous successful fit - store this fit
+                            # Store the current fit for later comparison
+                            storedseries = SeriesData(currentseries)
+
+                            @debug "Trying extra interpolation"
+
+                            # Now we attempt a spatial interpolation to see if this makes a difference.
+                            # I think this won't happen if we get a valid fit at the first attempt, and it should (Issue #5)
+                            if length(spatialinterpolationcells) == 0
+                                continuefit = false
+                            elseif spatialinterpolationcount > 0 && spatialinterpolationcount == length(spatialinterpolationcells)
+                                continuefit = false
+                            else
+                                spatialinterpolationcount += 1
+                            end
+                        else
+                            # There is a previous fit
+                            if significantdifference(storedseries, currentseries)
+                                # The interpolated fit is different to the previous fit.
+                                # Continue the interpolation to refine the fit further
+                                storedseries = SeriesData(currentseries)
+
+                                if spatialinterpolationcount > 0
+                                    if length(spatialinterpolationcells) == 0
+                                        continuefit = false
+                                    elseif spatialinterpolationcount > 0 && spatialinterpolationcount == length(spatialinterpolationcells)
+                                        continuefit = false
+                                    else
+                                        spatialinterpolationcount += 1
+                                    end
+                                else
+                                    spatialinterpolationcount += 1
+                                end
+                            else
+                                # The spatial interpolation made no difference. We can stop
+                                # with the previous fit
+                                continuefit = false
+                            end
+                        end
                     end
                 end
             end
@@ -209,9 +264,7 @@ function attemptfit!(series::SeriesData)
     # Attempt a curve fit
     fitcurve!(series)
 
-    if length(series.curveparams) > 0
-        println("Curve fit was successful")
-    else
+    if length(series.curveparams) == 0
         println("Interpolate")
     end
 end
