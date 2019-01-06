@@ -4,6 +4,7 @@ using ProgressMeter
 using Serialization
 using Logging
 using Statistics
+using LsqFit
 
 export Cell
 export makecells
@@ -32,9 +33,9 @@ mutable struct InterpolationCellData
 
     function InterpolationCellData(cell::Cell, timesize::Int64, island::Bool, fco2::Array{Union{Missing, Float64}, 1},
         uncertainty::Array{Union{Missing, Float64}, 1})
-        
+
         newobj::InterpolationCellData = new(cell)
-        
+
         newobj.land = island
         newobj.finished = island # If the cell is on land, we've already finished
         newobj.fitparams = Array{Float64, 1}(undef, 5)
@@ -109,7 +110,7 @@ end
 # Perform the main interpolation for a cell
 function interpolatecell(cell::Cell, interpolationstep::Int8)
     data::InterpolationCellData = _loadinterpolationdata(cell)
-    
+
     if !data.finished
         local logger::Tuple{SimpleLogger, IOStream} = _makelogger(cell, interpolationstep)
         interpolate!(data, interpolationstep, logger[1])
@@ -122,7 +123,7 @@ end
 # Perform interpolation
 function interpolate!(data::InterpolationCellData, step::Int8, logger::SimpleLogger)
     with_logger(logger) do
-        
+
         local fitfound::Bool = false
         local continuefit::Bool = true
         local spatialinterpolationcount::Int8 = 0
@@ -158,10 +159,14 @@ function interpolate!(data::InterpolationCellData, step::Int8, logger::SimpleLog
                     end
                 end
             end
+
+            # Safety cutoff
+            exit()
         end
     end
 end
 
+# Try to fit a curve to the supplied time series
 function attemptfit(series::Array{Union{Missing, Float64}, 1}, weights::Array{Union{Missing, Float64}, 1}, uncertainties::Array{Union{Missing, Float64}, 1})::Array{Union{Missing, Float64}, 1}
     local successfulparams::Array{Float64, 1} = Array{Float64, 1}()
 
@@ -170,18 +175,47 @@ function attemptfit(series::Array{Union{Missing, Float64}, 1}, weights::Array{Un
 
 end
 
+# Fit a harmonic curve to a time series
 function fitcurve(series::Array{Union{Missing, Float64}, 1}, weights::Array{Union{Missing, Float64}, 1})::Array{Float64, 1}
     local fitseries::Array{Union{Missing, Float64}, 1} = removeoutliers(series)
     if !doprefitcheck(fitseries)
-        @info("PREFIT CHECKS FAILED")
+        @info "PREFIT CHECKS FAILED"
     else
-        println("I can continue")
+        local fitsuccess::Bool = false
+        local harmoniccount::Int8 = 4
+
+        while !fitsuccess && harmoniccount > 0
+            @debug "Fitting $harmoniccount harmonic(s)"
+
+            local termcount::Int8 = 0
+
+            local formula::String = "p[1] + p[2]x"
+            termcount = 2
+
+            for i in 1:harmoniccount
+                formula = "$formula + p[$(termcount + 1)]*sin(2*π*$i*(x/365)) + p[$(termcount + 2)]*cos(2*π*$i*(x/365))"
+                termcount += 2
+            end
+
+            fitfunction = eval(Meta.parse("@. (x, p) -> " * formula))
+            model(x, p) = Base.invokelatest(fitfunction, x, p)
+
+            local p0::Array{Float64, 1} = zeros(termcount)
+            local days::Array{Int32, 1} = findall((!ismissing).(series))
+
+            # TODO Handle fit failure
+            local fit::LsqFit.LsqFitResult = curve_fit(model, days, collect(skipmissing(series)), p0)
+
+            exit()
+        end
     end
 
     exit()
 
 end
 
+# Remove outliers from a time series. The outlier limit
+# is defined in MAX_STDEV
 function removeoutliers(series::Array{Union{Missing, Float64}, 1})::Array{Union{Missing, Float64}, 1}
     local filteredseries::Array{Union{Missing, Float64}, 1} = Array{Union{Missing, Float64}, 1}(missing, length(series))
 
@@ -197,17 +231,18 @@ function removeoutliers(series::Array{Union{Missing, Float64}, 1})::Array{Union{
         end
     end
 
-    @debug("Removed $(_countvalues(series) - _countvalues(filteredseries)) outliers")
+    @debug "Removed $(_countvalues(series) - _countvalues(filteredseries)) outliers"
     filteredseries
 end
 
+# Check that a time series is suitable to have a curve fit attempted on it
 function doprefitcheck(series::Array{Union{Missing, Float64}, 1})::Bool
     local ok::Bool = true
 
     # Standard deviation
     local stdev = std(skipmissing(series))
     if stdev > MAX_STDEV
-        @info("Standard deviation is $stdev, should be <= $MAX_STDEV")
+        @info "Standard deviation is $stdev, should be <= $MAX_STDEV"
         ok = false
     end
 
@@ -215,7 +250,7 @@ function doprefitcheck(series::Array{Union{Missing, Float64}, 1})::Bool
     local missingdays::Array{Int64, 1} = findall(!ismissing, series)
     local dayspan::Int64 = missingdays[end] - missingdays[1]
     if dayspan < MIN_TIME_SPAN
-        @info("Measurements must span at least $MIN_TIME_SPAN days (only has $dayspan)")
+        @info "Measurements must span at least $MIN_TIME_SPAN days (only has $dayspan)"
         ok = false
     end
 
@@ -233,9 +268,9 @@ function doprefitcheck(series::Array{Union{Missing, Float64}, 1})::Bool
             end
         end
 
-        local populatedmonthcount::Int8 = sum(populatedmonths)
+        local populatedmonthcount::Int8 = count(populatedmonths)
         if populatedmonthcount < MIN_POPULATED_MONTHS
-            @info("Should have at least $MIN_POPULATED_MONTHS populated months (only has $populatedmonthcount)")
+            @info "Should have at least $MIN_POPULATED_MONTHS populated months (only has $populatedmonthcount)"
         end
     end
 
