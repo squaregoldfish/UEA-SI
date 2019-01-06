@@ -21,7 +21,7 @@ function run()
 
 	#####################################
 	## LOAD DATA
-	local loadcount::Int64 = 0
+	local loadcount::UInt8 = 0
 	if __INIT_DATA__
 		loadcount = 8
 	else
@@ -46,7 +46,7 @@ function run()
 
 	# Sea mask
 	if __INIT_DATA__
-		local seamask::Array{Int8, 2} = convert.(Int8, Dataset(SEA_FILE)["SEA"][:,:])
+		local seamask::Array{UInt8, 2} = convert.(UInt8, Dataset(SEA_FILE)["SEA"][:,:])
 		next!(loadprogress)
 	end
 
@@ -96,7 +96,7 @@ function run()
 	#end
 
 	testcell::Cell = (lon=76, lat=31)
-	interpolatecell(testcell, convert(Int8, 1))
+	interpolatecell(testcell, convert(UInt8, 1))
 
 #	println("Final finished count: $lastfinishedcount")
 

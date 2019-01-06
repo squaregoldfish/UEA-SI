@@ -10,7 +10,7 @@ export Cell
 export makecells
 export interpolatecell
 
-const Cell = NamedTuple{(:lon, :lat), Tuple{Int64, Int64}}
+const Cell = NamedTuple{(:lon, :lat), Tuple{UInt16, UInt16}}
 const INTERPOLATION_DATA_DIR = "interpolation_data"
 
 # Limits
@@ -18,6 +18,13 @@ const MAX_STDEV = 75.0
 const MIN_TIME_SPAN = 1825 # 5 years
 const MONTH_END_DAYS = [31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334, 365]
 const MIN_POPULATED_MONTHS = 8
+const MAX_LINEAR_TREND = 4.5
+const MIN_LINEAR_TREND = -2.5
+const MAX_PEAKS_PER_YEAR = 2
+const MAX_PEAK_RATIO = 0.33
+const MIN_CURVE_RATIO = 0.5
+const MAX_CURVE_RATIO = 1.5
+const MAX_LIMIT_DIFFERENCE = 75
 
 mutable struct InterpolationCellData
     cell::Cell
@@ -65,7 +72,7 @@ function makecells(lonsize::Int64, latsize::Int64)::Array{Cell, 1}
 end
 
 # Create the array of base data structures for the interpolations
-function makecells(lonsize::Int64, latsize::Int64, timesize::Int64, seamask::Array{Int8, 2},
+function makecells(lonsize::Int64, latsize::Int64, timesize::Int64, seamask::Array{UInt8, 2},
     fco2::Array{Union{Missing, Float64}, 3}, uncertainty::Array{Union{Missing, Float64}, 3})::Array{Cell, 1}
 
     if isdir(INTERPOLATION_DATA_DIR)
@@ -83,7 +90,7 @@ function makecells(lonsize::Int64, latsize::Int64, timesize::Int64, seamask::Arr
 end #_makecells
 
 # Generate the basic interpolation data
-function makeinterpolationdata(cellindex::Int64, lonsize::Int64, latsize::Int64, seamask::Array{Int8, 2}, timesize::Int64,
+function makeinterpolationdata(cellindex::Int64, lonsize::Int64, latsize::Int64, seamask::Array{UInt8, 2}, timesize::Int64,
     fco2::Array{Union{Missing, Float64}, 3}, uncertainty::Array{Union{Missing, Float64}, 3})::Cell
 
     local cell::Cell = _makecell(cellindex, lonsize, latsize)
@@ -108,7 +115,7 @@ end
 
 
 # Perform the main interpolation for a cell
-function interpolatecell(cell::Cell, interpolationstep::Int8)
+function interpolatecell(cell::Cell, interpolationstep::UInt8)
     data::InterpolationCellData = _loadinterpolationdata(cell)
 
     if !data.finished
@@ -121,12 +128,12 @@ function interpolatecell(cell::Cell, interpolationstep::Int8)
 end
 
 # Perform interpolation
-function interpolate!(data::InterpolationCellData, step::Int8, logger::SimpleLogger)
+function interpolate!(data::InterpolationCellData, step::UInt8, logger::SimpleLogger)
     with_logger(logger) do
 
         local fitfound::Bool = false
         local continuefit::Bool = true
-        local spatialinterpolationcount::Int8 = 0
+        local spatialinterpolationcount::UInt8 = 0
 
         # Variables for processing (empty placeholders)
         local currentseries::Array{Union{Missing, Float64}, 1} = Array{Union{Missing, Float64}, 1}()
@@ -138,7 +145,7 @@ function interpolate!(data::InterpolationCellData, step::Int8, logger::SimpleLog
             local attemptcurvefit::Bool = true
 
             # Put together the series for the curve fit
-            if spatialinterpolationcount <= 0
+            if spatialinterpolationcount == 0
                 # Just use the original series as is
                 currentseries = deepcopy(data.originalinputseries)
                 currentuncertainties = deepcopy(data.originalinputuncertainties)
@@ -172,7 +179,6 @@ function attemptfit(series::Array{Union{Missing, Float64}, 1}, weights::Array{Un
 
     local fittedparams::Array{Float64, 1} = fitcurve(series, weights)
 
-
 end
 
 # Fit a harmonic curve to a time series
@@ -182,12 +188,12 @@ function fitcurve(series::Array{Union{Missing, Float64}, 1}, weights::Array{Unio
         @info "PREFIT CHECKS FAILED"
     else
         local fitsuccess::Bool = false
-        local harmoniccount::Int8 = 4
+        local harmoniccount::UInt8 = 4
 
         while !fitsuccess && harmoniccount > 0
             @debug "Fitting $harmoniccount harmonic(s)"
 
-            local termcount::Int8 = 0
+            local termcount::UInt8 = 0
 
             local formula::String = "p[1] + p[2]x"
             termcount = 2
@@ -201,17 +207,45 @@ function fitcurve(series::Array{Union{Missing, Float64}, 1}, weights::Array{Unio
             model(x, p) = Base.invokelatest(fitfunction, x, p)
 
             local p0::Array{Float64, 1} = zeros(termcount)
-            local days::Array{Int32, 1} = findall((!ismissing).(series))
+            local days::Array{UInt16, 1} = findall((!ismissing).(series))
 
             # TODO Handle fit failure
             local fit::LsqFit.LsqFitResult = curve_fit(model, days, collect(skipmissing(series)), p0)
+            local fitparams::Array{Float64, 1} = fit.param
+            @debug "Fitted params: $fitparams"
+
+            # TODO Handle fit failure
+            if true
+                # Check that the fit is OK
+
+                # Slope
+                local slope::Float64 = fitparams[2]
+                @debug "Fitted slope is $slope"
+                if slope > MAX_LINEAR_TREND || slope < MIN_LINEAR_TREND
+                    @info "Curve slope is outside $MIN_LINEAR_TREND - $MAX_LINEAR_TREND range"
+                    fitsuccess = false
+                else
+                    fitsuccess = true
+                end
+
+                fittedcurve::Array{Float64, 1} = makecurve(fitparams, length(series))
+
+                if fitsuccess && harmoniccount > 1
+                    fitsuccess = checkcurvepeaks(fitparams)
+                end
+
+                if fitsuccess
+                    fitsuccess = checkcurvefit(series, fittedcurve)
+                end
+
+
+                println(fitsuccess)
+                exit()
+            end
 
             exit()
         end
     end
-
-    exit()
-
 end
 
 # Remove outliers from a time series. The outlier limit
@@ -241,16 +275,18 @@ function doprefitcheck(series::Array{Union{Missing, Float64}, 1})::Bool
 
     # Standard deviation
     local stdev = std(skipmissing(series))
+    @debug "Series standard deviation = $stdev"
     if stdev > MAX_STDEV
-        @info "Standard deviation is $stdev, should be <= $MAX_STDEV"
+        @info "Standard too large, should be ≤ $MAX_STDEV"
         ok = false
     end
 
     # Minimum time coverage
     local missingdays::Array{Int64, 1} = findall(!ismissing, series)
     local dayspan::Int64 = missingdays[end] - missingdays[1]
+    @debug "Measurements span $dayspan days"
     if dayspan < MIN_TIME_SPAN
-        @info "Measurements must span at least $MIN_TIME_SPAN days (only has $dayspan)"
+        @info "Measurements must span at least $MIN_TIME_SPAN days"
         ok = false
     end
 
@@ -268,13 +304,193 @@ function doprefitcheck(series::Array{Union{Missing, Float64}, 1})::Bool
             end
         end
 
-        local populatedmonthcount::Int8 = count(populatedmonths)
+        local populatedmonthcount::UInt8 = count(populatedmonths)
+        @debug "$populatedmonthcount populated months"
         if populatedmonthcount < MIN_POPULATED_MONTHS
-            @info "Should have at least $MIN_POPULATED_MONTHS populated months (only has $populatedmonthcount)"
+            @info "Should have at least $MIN_POPULATED_MONTHS populated months"
         end
     end
 
     ok
+end
+
+# Make a curve using the supplied parameters
+function makecurve(params::Array{Float64, 1}, curvelength::Int64)::Array{Float64, 1}
+
+    local curve::Array{Float64, 1} = zeros(curvelength)
+
+    for i in 1:length(curve)
+
+        local value::Float64 = params[1] + params[2] * (i - 1)
+
+        local term::UInt8 = 2
+        for trigloop in 1:((length(params) - 2) / 2)
+            term += 1
+            value = value + params[term] * sin(2 * π * trigloop * ((i - 1) / 365))
+            term += 1
+            value = value + params[term] * cos(2 * π * trigloop * ((i - 1) / 365))
+        end
+
+        curve[i] = value
+    end
+
+    curve
+end
+
+# Make a curve using the supplied parameters
+function makeseasonalcycle(curveparams::Array{Float64, 1})::Array{Float64, 1}
+
+    local seasonalcycle::Array{Float64, 1} = zeros(365)
+
+    for i in 1:length(seasonalcycle)
+
+        local value::Float64 = 0.0
+
+        local term::UInt8 = 2
+        for trigloop in 1:((length(curveparams) - 2) / 2)
+            term += 1
+            value = value + curveparams[term] * sin(2 * π * trigloop * ((i - 1) / 365))
+            term += 1
+            value = value + curveparams[term] * cos(2 * π * trigloop * ((i - 1) / 365))
+        end
+
+        seasonalcycle[i] = value
+    end
+
+    seasonalcycle
+end
+
+# Check multiple harmonics in a seasonal cycle
+function checkcurvepeaks(curveparams::Array{Float64, 1})::Bool
+
+    local peaksok::Bool = true
+
+    local seasonalcycle::Array{Float64, 1} = makeseasonalcycle(curveparams)
+
+    local maxima::Array{Float64, 1} = Array{Float64, 1}()
+    local maximapos::Array{Int16, 1} = Array{Int16, 1}()
+    local minima::Array{Float64, 1} = Array{Float64, 1}()
+    local minimapos::Array{Int16, 1} = Array{Int16, 1}()
+
+    local lastvalue::Float64 = seasonalcycle[1]
+    local slopedirection::Int8 = 0 # Starting value; 1 = up, -1 = down
+    local startdirection::Int8 = 0
+    local enddirection::Int8 = 0
+    local curveamplitude::Float64 = maximum(seasonalcycle) - minimum(seasonalcycle)
+
+    for i in 2:365
+        if seasonalcycle[i] ≥ lastvalue
+            if slopedirection == -1
+                # Found a trough!
+                push!(minima, lastvalue)
+                push!(minimapos, i - 1)
+
+            end
+
+            slopedirection = 1
+
+            # Record the start direction
+            if startdirection == 0
+                startdirection = slopedirection
+            end
+        else
+            if slopedirection > 0
+                # We found a peak!
+                push!(maxima, lastvalue)
+                push!(maximapos, i - 1)
+            end
+
+            slopedirection = -1
+
+            # Record the start direction
+            if startdirection == 0
+                startdirection = slope_direction
+            end
+        end
+
+        lastvalue = seasonalcycle[i]
+    end
+
+    # Record the end direction
+    enddirection = slopedirection
+
+    # If the start and end directions are different, there's a peak/trough at zero.
+    if startdirection == 1 && enddirection == -1
+        insert!(minima, 1, seasonalcycle[1])
+        insert!(minimapos, 1, 1)
+    elseif startdirection == -1 && enddirection == 1
+        push!(maxima, seasonalcycle[365])
+        push!(maximapos, 365)
+    end
+
+    # Check the number of peaks
+    @debug "$(length(maxima)) peaks in the seasonal cycle"
+    if length(maxima) > MAX_PEAKS_PER_YEAR
+        @info "Peak check FAILED - too many peaks in seasonal cycle"
+        peaksok = false
+    else
+        # Calculate the peak sizes
+        local peaksizes::Array{Float64, 1} = zeros(length(maxima))
+
+        for i in 1:length(maxima)
+            local maxvalue::Float64 = maxima[i]
+            local maxpos::UInt16 = maximapos[i]
+
+            # For each peak, we find the position of the preceding minimum
+            # We loop round to the end of the year if necessary
+            local minentry::UInt16 = 0
+            local minposcandidates::Array{UInt16, 1} = findall(x -> (x < maxpos), minimapos)
+            if length(minposcandidates) == 0
+                minentry = length(minima)
+            else
+                minentry = minposcandidates[end]
+            end
+
+            local minvalue::Float64 = minima[minentry]
+            peaksizes[i] = abs(maxvalue - minvalue)
+        end
+
+        local peaksizelimit::Float64 = curveamplitude * MAX_PEAK_RATIO
+        local largepeakcount::UInt8 = length(findall(x -> (x > peaksizelimit), peaksizes))
+        @debug "Peak sizes = $(peaksizes ./ curveamplitude)"
+        if largepeakcount > 1 # The 'main' cycle is detected as a peak, so ignore it
+            @info "Peak check FAILED - secondary peak(s) too large"
+            peaksok = false
+        end
+    end
+
+    peaksok
+end
+
+function checkcurvefit(series::Array{Union{Missing, Float64}, 1}, fittedcurve::Array{Float64, 1})::Bool
+
+    local curveok::Bool = true
+
+    # Compare the curve range with the series range
+    local seriesmax::Float64 = maximum(skipmissing(series))
+    local seriesmin::Float64 = minimum(skipmissing(series))
+    local curvemax::Float64 = maximum(fittedcurve)
+    local curvemin::Float64 = minimum(fittedcurve)
+    local seriesrange::Float64 = seriesmax - seriesmin
+    local curverange::Float64 = curvemax - curvemin
+    local rangeratio::Float64 = curverange / seriesrange
+
+    @debug "Range ratio = $rangeratio"
+    if rangeratio < MIN_CURVE_RATIO || rangeratio > MAX_CURVE_RATIO
+        curveok = true
+        @info "Ratio FAILED should be $MIN_CURVE_RATIO  to $MAX_CURVE_RATIO"
+    end
+
+    local maxdiff::Float64 = abs(seriesmax - curvemax)
+    local mindiff::Float64 = abs(seriesmin - curvemin)
+
+    @debug "Limit differences = $maxdiff, $mindiff"
+    if maxdiff > MAX_LIMIT_DIFFERENCE || mindiff > MAX_LIMIT_DIFFERENCE
+        curveok = false
+        @info "Limit difference FAILED should be in be $MAX_LIMIT_DIFFERENCE or less"
+    end
+
+    curveok
 end
 
 ###############################################################
@@ -282,7 +498,7 @@ end
 # Simple utility methods
 
 # Initialise a logger for a cell and interpolation run
-function _makelogger(cell::Cell, interpolationstep::Int8)::Tuple{SimpleLogger, IOStream}
+function _makelogger(cell::Cell, interpolationstep::UInt8)::Tuple{SimpleLogger, IOStream}
     logfile::String = "$(INTERPOLATION_DATA_DIR)/$(cell.lon)_$(cell.lat)_$(interpolationstep).log"
     io::IOStream = open(logfile, "w")
     logger::SimpleLogger = SimpleLogger(io, Logging.Debug, Dict{Any,Int64}())
