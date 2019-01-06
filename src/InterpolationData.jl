@@ -9,22 +9,11 @@ using LsqFit
 export Cell
 export makecells
 export interpolatecell
+export InterpolationCellData
+
 
 const Cell = NamedTuple{(:lon, :lat), Tuple{UInt16, UInt16}}
 const INTERPOLATION_DATA_DIR = "interpolation_data"
-
-# Limits
-const MAX_STDEV = 75.0
-const MIN_TIME_SPAN = 1825 # 5 years
-const MONTH_END_DAYS = [31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334, 365]
-const MIN_POPULATED_MONTHS = 8
-const MAX_LINEAR_TREND = 4.5
-const MIN_LINEAR_TREND = -2.5
-const MAX_PEAKS_PER_YEAR = 2
-const MAX_PEAK_RATIO = 0.33
-const MIN_CURVE_RATIO = 0.5
-const MAX_CURVE_RATIO = 1.5
-const MAX_LIMIT_DIFFERENCE = 75
 
 mutable struct InterpolationCellData
     cell::Cell
@@ -56,7 +45,7 @@ mutable struct InterpolationCellData
         newobj.paraminputuncertainties = copy(newobj.originalinputuncertainties)
         newobj.paraminputweights = copy(newobj.originalinputweights)
 
-        return newobj
+        newobj
     end
 end #InterpolationCellData
 
@@ -113,7 +102,6 @@ function _makecell(cellindex::Int64, lonsize::Int64, latsize::Int64)::Cell
     return (lon=lonindex, lat=latindex)
 end
 
-
 # Perform the main interpolation for a cell
 function interpolatecell(cell::Cell, interpolationstep::UInt8)
     data::InterpolationCellData = _loadinterpolationdata(cell)
@@ -127,6 +115,51 @@ function interpolatecell(cell::Cell, interpolationstep::UInt8)
     return data.finished
 end
 
+
+###############################################################
+#
+# Interpolation stuff
+
+# Limits
+const MAX_STDEV = 75.0
+const MIN_TIME_SPAN = 1825 # 5 years
+const MONTH_END_DAYS = [31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334, 365]
+const MIN_POPULATED_MONTHS = 8
+const MAX_LINEAR_TREND = 4.5
+const MIN_LINEAR_TREND = -2.5
+const MAX_PEAKS_PER_YEAR = 2
+const MAX_PEAK_RATIO = 0.33
+const MIN_CURVE_RATIO = 0.5
+const MAX_CURVE_RATIO = 1.5
+const MAX_LIMIT_DIFFERENCE = 75
+
+
+# Structure to hold a series and its related data
+mutable struct SeriesData
+    measurements::Array{Union{Missing, Float64}, 1}
+    uncertainties::Array{Union{Missing, Float64}, 1}
+    weights::Array{Union{Missing, Float64}, 1}
+    curve::Array{Float64, 1}
+    curveparams::Array{Float64, 1}
+
+    function SeriesData()
+        newobj::SeriesData = new()
+        newobj.measurements = Array{Union{Missing, Float64}, 1}()
+        newobj.uncertainties = Array{Union{Missing, Float64}, 1}()
+        newobj.weights = Array{Union{Missing, Float64}, 1}()
+        newobj.curve = Array{Float64, 1}()
+        newobj.curveparams = Array{Float64, 1}()
+        newobj
+    end
+
+    function SeriesData(measurements::Array{Union{Missing, Float64}, 1}, uncertainties::Array{Union{Missing, Float64}, 1}, weights::Array{Union{Missing, Float64}, 1})
+        newobj::SeriesData = new(deepcopy(measurements), deepcopy(uncertainties), deepcopy(weights))
+        newobj.curve = Array{Float64, 1}()
+        newobj.curveparams = Array{Float64, 1}()
+        newobj
+    end
+end
+
 # Perform interpolation
 function interpolate!(data::InterpolationCellData, step::UInt8, logger::SimpleLogger)
     with_logger(logger) do
@@ -136,10 +169,7 @@ function interpolate!(data::InterpolationCellData, step::UInt8, logger::SimpleLo
         local spatialinterpolationcount::UInt8 = 0
 
         # Variables for processing (empty placeholders)
-        local currentseries::Array{Union{Missing, Float64}, 1} = Array{Union{Missing, Float64}, 1}()
-        local currentuncertainties::Array{Union{Missing, Float64}, 1} = currentseries
-        local currentweights::Array{Union{Missing, Float64}, 1} = currentseries
-        local currentcurve::Array{Union{Missing, Float64}, 1} = currentseries
+        local currentseries::SeriesData = SeriesData()
 
         while continuefit
             local attemptcurvefit::Bool = true
@@ -147,9 +177,9 @@ function interpolate!(data::InterpolationCellData, step::UInt8, logger::SimpleLo
             # Put together the series for the curve fit
             if spatialinterpolationcount == 0
                 # Just use the original series as is
-                currentseries = deepcopy(data.originalinputseries)
-                currentuncertainties = deepcopy(data.originalinputuncertainties)
-                currentweights = deepcopy(data.originalinputweights)
+                currentseries.measurements = deepcopy(data.originalinputseries)
+                currentseries.uncertainties = deepcopy(data.originalinputuncertainties)
+                currentseries.weights = deepcopy(data.originalinputweights)
             else
                 # Need to do spatial interpolation
                 println("Must do spatial interpolation.")
@@ -158,8 +188,8 @@ function interpolate!(data::InterpolationCellData, step::UInt8, logger::SimpleLo
 
             if continuefit
                 if attemptcurvefit
-                    currentcurve = attemptfit(currentseries, currentweights, currentuncertainties)
-                    if length(currentcurve) > 0
+                    attemptfit!(currentseries)
+                    if length(currentseries.curve) > 0
                         println("Fit achieved")
                     else
                         println("Fit failed")
@@ -174,16 +204,21 @@ function interpolate!(data::InterpolationCellData, step::UInt8, logger::SimpleLo
 end
 
 # Try to fit a curve to the supplied time series
-function attemptfit(series::Array{Union{Missing, Float64}, 1}, weights::Array{Union{Missing, Float64}, 1}, uncertainties::Array{Union{Missing, Float64}, 1})::Array{Union{Missing, Float64}, 1}
-    local successfulparams::Array{Float64, 1} = Array{Float64, 1}()
+function attemptfit!(series::SeriesData)
 
-    local fittedparams::Array{Float64, 1} = fitcurve(series, weights)
+    # Attempt a curve fit
+    fitcurve!(series)
 
+    if length(series.curveparams) > 0
+        println("Curve fit was successful")
+    else
+        println("Interpolate")
+    end
 end
 
 # Fit a harmonic curve to a time series
-function fitcurve(series::Array{Union{Missing, Float64}, 1}, weights::Array{Union{Missing, Float64}, 1})::Array{Float64, 1}
-    local fitseries::Array{Union{Missing, Float64}, 1} = removeoutliers(series)
+function fitcurve!(series::SeriesData)
+    local fitseries::Array{Union{Missing, Float64}, 1} = removeoutliers(series.measurements)
     if !doprefitcheck(fitseries)
         @info "PREFIT CHECKS FAILED"
     else
@@ -207,11 +242,12 @@ function fitcurve(series::Array{Union{Missing, Float64}, 1}, weights::Array{Unio
             model(x, p) = Base.invokelatest(fitfunction, x, p)
 
             local p0::Array{Float64, 1} = zeros(termcount)
-            local days::Array{UInt16, 1} = findall((!ismissing).(series))
+            local days::Array{UInt16, 1} = findall((!ismissing).(fitseries))
 
             # TODO Handle fit failure
-            local fit::LsqFit.LsqFitResult = curve_fit(model, days, collect(skipmissing(series)), p0)
+            local fit::LsqFit.LsqFitResult = curve_fit(model, days, collect(skipmissing(fitseries)), p0)
             local fitparams::Array{Float64, 1} = fit.param
+            local fittedcurve::Array{Float64, 1} = makecurve(fitparams, length(fitseries))
             @debug "Fitted params: $fitparams"
 
             # TODO Handle fit failure
@@ -228,22 +264,21 @@ function fitcurve(series::Array{Union{Missing, Float64}, 1}, weights::Array{Unio
                     fitsuccess = true
                 end
 
-                fittedcurve::Array{Float64, 1} = makecurve(fitparams, length(series))
-
                 if fitsuccess && harmoniccount > 1
                     fitsuccess = checkcurvepeaks(fitparams)
                 end
 
                 if fitsuccess
-                    fitsuccess = checkcurvefit(series, fittedcurve)
+                    fitsuccess = checkcurvefit(fitseries, fittedcurve)
                 end
-
-
-                println(fitsuccess)
-                exit()
             end
 
-            exit()
+            if fitsuccess
+                series.curve = fittedcurve
+                series.curveparams = fitparams
+            else
+                harmoniccount -= 1
+            end
         end
     end
 end
@@ -493,6 +528,8 @@ function checkcurvefit(series::Array{Union{Missing, Float64}, 1}, fittedcurve::A
     curveok
 end
 
+
+
 ###############################################################
 #
 # Simple utility methods
@@ -539,4 +576,5 @@ end
 function _countvalues(series::Array{Union{Missing, Float64}, 1})::Int64
     length(collect(skipmissing(series)))
 end
+
 end #module
