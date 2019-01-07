@@ -593,7 +593,7 @@ function checkcurvefit(series::Array{Union{Missing, Float64}, 1}, fittedcurve::A
 
     @debug "Range ratio = $rangeratio"
     if rangeratio < MIN_CURVE_RATIO || rangeratio > MAX_CURVE_RATIO
-        curveok = true
+        curveok = false
         @info "Ratio FAILED should be $MIN_CURVE_RATIO  to $MAX_CURVE_RATIO"
     end
 
@@ -603,7 +603,7 @@ function checkcurvefit(series::Array{Union{Missing, Float64}, 1}, fittedcurve::A
     @debug "Limit differences = $maxdiff, $mindiff"
     if maxdiff > MAX_LIMIT_DIFFERENCE || mindiff > MAX_LIMIT_DIFFERENCE
         curveok = false
-        @info "Limit difference FAILED should be in be $MAX_LIMIT_DIFFERENCE or less"
+        @info "Limit difference FAILED should be $MAX_LIMIT_DIFFERENCE or less"
     end
 
     curveok
