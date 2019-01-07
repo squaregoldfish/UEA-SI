@@ -192,12 +192,13 @@ function interpolate!(data::InterpolationCellData, step::UInt8, logger::SimpleLo
             # Put together the series for the curve fit
             if spatialinterpolationcount == 0
                 # Just use the original series as is
-                currentseries.measurements = deepcopy(data.originalinputseries)
-                currentseries.uncertainties = deepcopy(data.originalinputuncertainties)
-                currentseries.weights = deepcopy(data.originalinputweights)
+                currentseries.measurements = deepcopy(data.paraminputseries)
+                currentseries.uncertainties = deepcopy(data.paraminputuncertainties)
+                currentseries.weights = deepcopy(data.paraminputweights)
             else
                 # Need to do spatial interpolation
                 println("Must do spatial interpolation.")
+                # Don't forget to use data.paraminputseries
                 exit()
             end
 
@@ -273,6 +274,7 @@ function interpolate!(data::InterpolationCellData, step::UInt8, logger::SimpleLo
             data.paraminputseries = currentseries.measurements
             data.paraminputweights = currentseries.weights
             data.paraminputuncertainties = currentseries.uncertainties
+            data.fitparams = currentseries.curveparams
 
             if fitfound
                 @info "SUCCESS"
@@ -293,7 +295,7 @@ function attemptfit!(series::SeriesData)
     fitcurve!(series)
 
     if length(series.curveparams) == 0
-        println("Interpolate")
+        println("Do temporal interpolation")
     end
 end
 
@@ -424,6 +426,7 @@ function doprefitcheck(series::Array{Union{Missing, Float64}, 1})::Bool
         @debug "$populatedmonthcount populated months"
         if populatedmonthcount < MIN_POPULATED_MONTHS
             @info "Should have at least $MIN_POPULATED_MONTHS populated months"
+            ok = false
         end
     end
 
