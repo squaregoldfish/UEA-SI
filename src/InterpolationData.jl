@@ -520,7 +520,7 @@ function checkcurvepeaks(curveparams::Array{Float64, 1})::Bool
 
             # Record the start direction
             if startdirection == 0
-                startdirection = slope_direction
+                startdirection = slopedirection
             end
         end
 
