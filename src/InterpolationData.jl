@@ -250,10 +250,38 @@ function interpolate!(data::InterpolationCellData, step::UInt8, logger::SimpleLo
                         end
                     end
                 end
+
+                if !attemptcurvefit || length(currentseries.curve) == 0
+                    # We didn't get a successful fit. Do a spatial interpolation to get more
+                    # measurements in play. Unless, of course, there are no more candidate cells
+                    # for interpolation
+                    if spatialinterpolationcount > 0
+                        if length(spatial_interpolation_cells) == 0
+                            continuefit = false
+                        elseif spatialinterpolationcount > 0 && spatialinterpolationcount == length(spatialinterpolationcells)
+                            continuefit = false
+                        else
+                            spatialinterpolationcount += 1
+                        end
+                    else
+                        spatialinterpolationcount += 1
+                    end
+                end
             end
 
-            # Safety cutoff
-            exit()
+            # Store data from this attempt, successful or otherwise
+            data.paraminputseries = currentseries.measurements
+            data.paraminputweights = currentseries.weights
+            data.paraminputuncertainties = currentseries.uncertainties
+
+            if fitfound
+                @info "SUCCESS"
+                data.finished = true
+            else
+                @info "FAILED"
+            end
+
+            _saveinterpolationdata(data)
         end
     end
 end
