@@ -57,10 +57,10 @@ function run()
 	next!(loadprogress)
 
 	# Autocorrelation data
-	local spatial_acfs::Array{Union{Missing, Float64}, 4} = Dataset(SPATIAL_ACFS_FILE)["mean_directional_acfs"][:,:,:,:]
+	local spatialacfs::Array{Union{Missing, Float64}, 4} = Dataset(SPATIAL_ACFS_FILE)["mean_directional_acfs"][:,:,:,:]
 	next!(loadprogress)
 
-	local temporal_acf::Array{Float64, 1} = readdlm(TEMPORAL_ACFS_FILE, ',', Float64, '\n')[:,2]
+	local temporalacf::Array{Float64, 1} = readdlm(TEMPORAL_ACFS_FILE, ',', Float64, '\n')[:,2]
 	finish!(loadprogress)
 
 	######################################
@@ -95,8 +95,8 @@ function run()
 	#	println("Finished cells: $(sum(finishedarray .== true))")
 	#end
 
-	testcell::Cell = (lon=76, lat=31)
-	interpolatecell(testcell, convert(UInt8, 1))
+	testcell::Cell = (lon=69, lat=25)
+	interpolatecell(testcell, convert(UInt8, 1), temporalacf)
 
 #	println("Final finished count: $lastfinishedcount")
 

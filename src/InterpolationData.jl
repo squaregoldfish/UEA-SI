@@ -103,12 +103,12 @@ function _makecell(cellindex::Int64, lonsize::Int64, latsize::Int64)::Cell
 end
 
 # Perform the main interpolation for a cell
-function interpolatecell(cell::Cell, interpolationstep::UInt8)
+function interpolatecell(cell::Cell, interpolationstep::UInt8, temporalacf::Array{Float64, 1})
     data::InterpolationCellData = _loadinterpolationdata(cell)
 
     if !data.finished
         local logger::Tuple{SimpleLogger, IOStream} = _makelogger(cell, interpolationstep)
-        interpolate!(data, interpolationstep, logger[1])
+        interpolate!(data, interpolationstep, temporalacf, logger[1])
         _closelogger(logger[2])
     end
 
@@ -132,6 +132,7 @@ const MAX_PEAK_RATIO = 0.33
 const MIN_CURVE_RATIO = 0.5
 const MAX_CURVE_RATIO = 1.5
 const MAX_LIMIT_DIFFERENCE = 75
+const TEMPORAL_INTERPOLATION_LIMIT = 7
 
 
 # Structure to hold a series and its related data
@@ -171,7 +172,7 @@ mutable struct SeriesData
 end
 
 # Perform interpolation
-function interpolate!(data::InterpolationCellData, step::UInt8, logger::SimpleLogger)
+function interpolate!(data::InterpolationCellData, step::UInt8, temporalacf::Array{Float64, 1}, logger::SimpleLogger)
     with_logger(logger) do
 
         local fitfound::Bool = false
@@ -204,7 +205,7 @@ function interpolate!(data::InterpolationCellData, step::UInt8, logger::SimpleLo
 
             if continuefit
                 if attemptcurvefit
-                    attemptfit!(currentseries)
+                    attemptfit!(currentseries, temporalacf)
 
                     if length(currentseries.curve) > 0
                         fitfound = true
@@ -289,13 +290,14 @@ function interpolate!(data::InterpolationCellData, step::UInt8, logger::SimpleLo
 end
 
 # Try to fit a curve to the supplied time series
-function attemptfit!(series::SeriesData)
+function attemptfit!(series::SeriesData, temporalacf::Array{Float64, 1})
 
     # Attempt a curve fit
     fitcurve!(series)
 
     if length(series.curveparams) == 0
-        println("Do temporal interpolation")
+        dotemporalinterpolation!(series, temporalacf)
+        fitcurve!(series)
     end
 end
 
@@ -431,6 +433,66 @@ function doprefitcheck(series::Array{Union{Missing, Float64}, 1})::Bool
     end
 
     ok
+end
+
+# Perform temporal interpolation
+function dotemporalinterpolation!(series::SeriesData, temporalacf::Array{Float64, 1})
+
+    local interpolatedmeasurements::Array{Union{Missing, Float64}, 1} = Array{Union{Missing, Float64}}(missing, length(series.measurements))
+    local interpolatedweights::Array{Union{Missing, Float64}, 1} = Array{Union{Missing, Float64}}(missing, length(series.measurements))
+    local interpolateduncertainties::Array{Union{Missing, Float64}, 1} = Array{Union{Missing, Float64}}(missing, length(series.measurements))
+
+    for i in 1:length(series.measurements)
+
+        if ismissing(series.measurements[i])
+            local interpstart::Int64 = i - TEMPORAL_INTERPOLATION_LIMIT
+            if interpstart < 1
+                interpstart = 1
+            end
+
+            local interpend::Int64 = i + TEMPORAL_INTERPOLATION_LIMIT
+            if interpend > length(series.measurements)
+                interpend = length(series.measurements)
+            end
+
+            local interptotal::Float64 = 0.0
+            local interpweightsum::Float64 = 0.0
+            local interpcount::Int16 = 0
+
+            for j in interpstart:interpend
+                if !ismissing(series.measurements[j])
+                    local lag::Int16 = abs(i - j)
+                    interptotal += series.measurements[j] * temporalacf[lag]
+                    interpweightsum += temporalacf[lag]
+                    interpcount += 1
+                end
+            end
+
+            if interpcount > 0
+                interpolatedmeasurements[i] = interptotal / interpweightsum
+                interpolatedweights[i] = interpweightsum / interpcount
+
+                # The uncertainty doesn't matter, since the temporally interpolated
+                # values are only temporary anyway - they don't make it to the final
+                # interpolated product
+                interpolateduncertainties[i] = 0
+            end
+        end
+    end
+
+    mergevalues!(series.measurements, interpolatedmeasurements)
+    mergevalues!(series.weights, interpolatedweights)
+    mergevalues!(series.uncertainties, interpolateduncertainties)
+end
+
+# Merge two sets of values. Where two values overlap,
+# use the original
+function mergevalues!(original::Array{Union{Missing, Float64}, 1}, incoming::Array{Union{Missing, Float64}, 1})
+    for i in 1:length(original)
+        if ismissing(original[i]) && !ismissing(incoming[i])
+            original[i] = incoming[i]
+        end
+    end
 end
 
 # Make a curve using the supplied parameters
