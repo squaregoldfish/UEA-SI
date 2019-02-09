@@ -178,11 +178,11 @@ landBetween <- function(lon, lat, interp_lon, interp_lat) {
             # If we've already found a land cell, stop
             if (found_land) {
                 break
-            }            
+            }
 
             x <- x + xstep
             error <- error + ddy
-            
+
             if (error > ddx) {
                 y <- y + ystep
                 error <- error - ddx
@@ -222,11 +222,11 @@ landBetween <- function(lon, lat, interp_lon, interp_lat) {
             # If we've already found a land cell, stop
             if (found_land) {
                 break
-            } 
+            }
 
             y <- y + ystep
             error <- error + ddx
-            
+
             if (error > ddy) {
                 x <- x + xstep
                 error <- error - ddy
@@ -288,7 +288,7 @@ doSpatialInterpolation <- function(indir, lon, lat, measurements, weights, uncer
     }
 
     if (length(spatial_interpolation_cells) == 0) {
-        
+
         # There are no interpolation candidates. Return the input data
         interpolated_measurements <<- measurements
         interpolated_weights <<- weights
@@ -458,7 +458,7 @@ getSpatialInterpolationUncertainty <- function(target_lon, target_lat, interp_lo
     } else if (!is.na(reverse_uncertainty)) {
         uncertainty <- reverse_uncertainty
     } else {
-       
+
         # If we can't find an uncertainty for the specific cell combination, use the
         # mean uncertainty from the cells surrounding the target cell
         uncertainty_cells <- calculateInterpolationCells(target_lon, target_lat, 1)
