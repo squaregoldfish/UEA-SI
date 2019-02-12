@@ -2,5 +2,6 @@ SOCAT*.tsv
 daily.nc
 fco2.nc
 *.jldata
+flux/*.nc
 
 
