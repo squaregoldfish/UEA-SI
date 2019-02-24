@@ -6,18 +6,17 @@ import numpy as np
 from netCDF4 import Dataset
 
 
-def calc_gas_xfer(wind_speed, sst):
-    schmidt = 2073.1 - 125.62 * sst + 3.6276 * sst**2 - 0.043219 * sst**3
-    return 0.266 * wind_speed**2 * (schmidt / 660)**-0.5
+def calc_schmidt(sst):
+    return 2073.1 - 125.62 * sst + 3.6276 * sst**2 - 0.043219 * sst**3
 
 def calc_solubility(sst, salinity):
     kelvin_offset = 273.15
-    a1 = -60.2409
-    a2 = 93.4517
-    a3 = 23.3585
-    b1 = 0.023517
-    b2 = -0.023656
-    b3 = 0.0047036
+    a1 = -58.0931
+    a2 = 90.5069
+    a3 = 22.2940
+    b1 = 0.027766
+    b2 = -0.025888
+    b3 = 0.0050578
 
     kelvin = sst + kelvin_offset
 
@@ -36,6 +35,21 @@ atmos_co2 = Dataset("atmos_co2.nc").variables["ATMOS_CO2"][:, :, :]
 sst = Dataset("sst.nc").variables["SST"][:, :, :]
 salinity = Dataset("salinity.nc").variables["salinity"][:, :, :]
 wind = Dataset("wind.nc").variables["si10"][:, :, :]
+
+delta_pco2_nc = np.empty(shape=(396, 72, 144))
+delta_pco2_nc.fill(-9999.9)
+
+wind_sq_nc = np.empty(shape=(396, 72, 144))
+wind_sq_nc.fill(-9999.9)
+
+solubility_nc = np.empty(shape=(396, 72, 144))
+solubility_nc.fill(-9999.9)
+
+schmidt_nc = np.empty(shape=(396, 72, 144))
+schmidt_nc.fill(-9999.9)
+
+gas_xfer_nc = np.empty(shape=(396, 72, 144))
+gas_xfer_nc.fill(-9999.9)
 
 flux = np.empty(shape=(396, 72, 144))
 flux.fill(-9999.9)
@@ -56,17 +70,43 @@ for lon in range(0, 144):
         print("\r" + str(lon) + " " + str(lat) + "    ", end="")
         for time in range(0, 396):
 
-            if sst[time, lat, lon] > 0:
-                delta_pco2 = fco2[time, lat, lon] - atmos_co2[time, lat, lon]
-                gas_xfer = calc_gas_xfer(wind[time, lat, lon], sst[time, lat, lon])
-                solubility = calc_solubility(sst[time, lat, lon], salinity[time, lat, lon])
-                gas_xchange = gas_xfer * solubility * 1.027 * 24 * 365 * 1e-5
-                flux[time, lat, lon] = gas_xchange * delta_pco2
-                if np.isnan(flux[time, lat, lon]):
-                    flux[time, lat, lon] = -9999.9
+           if sst[time, lat, lon] > 0:
+               delta_pco2 = fco2[time, lat, lon] - atmos_co2[time, lat, lon]
+               delta_pco2_nc[time, lat, lon] = delta_pco2
+
+               wind_sq = wind[time, lat, lon]**2
+               wind_sq_nc[time, lat, lon] = wind_sq
+
+               solubility = calc_solubility(sst[time, lat, lon], salinity[time, lat, lon])
+               solubility_nc[time, lat, lon] = solubility
+
+               schmidt = calc_schmidt(sst[time, lat, lon])
+               schmidt_nc[time, lat, lon] = schmidt
+
+               gas_xfer = 0.585 * solubility * (schmidt)**0.5 * wind_sq
+               gas_xfer_nc[time, lat, lon] = gas_xfer
+
+               flux[time, lat, lon] = gas_xfer * delta_pco2
+               if np.isnan(flux[time, lat, lon]):
+                   flux[time, lat, lon] = -9999.9
 
 
 flux_nc = Dataset("fco2_with_flux.nc", mode="a")
+
+dpco2var = flux_nc.createVariable("dpco2", "d", ("time","lat", "lon"), fill_value = -9999.9)
+dpco2var[:, :, :] = delta_pco2_nc
+
+windsqvar = flux_nc.createVariable("wind_sq", "d", ("time","lat", "lon"), fill_value = -9999.9)
+windsqvar[:, :, :] = wind_sq_nc
+
+solubilityvar = flux_nc.createVariable("solubility", "d", ("time","lat", "lon"), fill_value = -9999.9)
+solubilityvar[:, :, :] = solubility_nc
+
+schmidtvar = flux_nc.createVariable("schmidt", "d", ("time","lat", "lon"), fill_value = -9999.9)
+schmidtvar[:, :, :] = schmidt_nc
+
+gasxfervar = flux_nc.createVariable("gas_xfer", "d", ("time","lat", "lon"), fill_value = -9999.9)
+gasxfervar[:, :, :] = gas_xfer_nc
 
 fluxvar = flux_nc.createVariable("flux", "d", ("time","lat", "lon"), fill_value = -9999.9)
 fluxvar[:, :, :] = flux
