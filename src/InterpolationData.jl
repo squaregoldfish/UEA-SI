@@ -5,15 +5,73 @@ using Serialization
 using Logging
 using Statistics
 using LsqFit
+using NCDatasets
 
 export Cell
 export makecells
 export interpolatecell
 export InterpolationCellData
 
+const NO_CELL = 65535
+const ETOPO_FILE = "etopo60.cdf"
+const ETOPO_URL = "https://github.com/NOAA-PMEL/FerretDatasets/blob/master/data/etopo60.cdf"
+const EARTH_RADIUS = 6367.5
+const SPATIAL_ACF_LAG_STEP = 25
 
+# Interpolation Limits
+const MAX_STDEV = 75.0
+const MIN_TIME_SPAN = 1825 # 5 years
+const MONTH_END_DAYS = [31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334, 365]
+const MIN_POPULATED_MONTHS = 8
+const MAX_LINEAR_TREND = 4.5
+const MIN_LINEAR_TREND = -2.5
+const MAX_PEAKS_PER_YEAR = 2
+const MAX_PEAK_RATIO = 0.33
+const MIN_CURVE_RATIO = 0.5
+const MAX_CURVE_RATIO = 1.5
+const MAX_LIMIT_DIFFERENCE = 75
+const TEMPORAL_INTERPOLATION_LIMIT = 7
+const MAX_SPATIAL_INTERPOLATION_STEPS = 10
+
+
+######################################################
+#
+# Global stuff
+#
 const Cell = NamedTuple{(:lon, :lat), Tuple{UInt16, UInt16}}
 const INTERPOLATION_DATA_DIR = "interpolation_data"
+
+# These aren't fixed, but they must be set based on the data
+# grid being processed
+LON_SIZE = 0
+LAT_SIZE = 0
+GRID_SIZE = 0
+
+ETOPO = nothing
+ETOPO_LONS = nothing
+ETOPO_LATS = nothing
+
+function init(lonsize::Int64, latsize::Int64)
+    global LON_SIZE, LAT_SIZE, GRID_SIZE
+    LON_SIZE = lonsize
+    LAT_SIZE = latsize
+    GRID_SIZE = 360.0 / LON_SIZE
+
+    if !isfile(ETOPO_FILE)
+        println("\nMissing bathymetry file $ETOPO_FILE")
+        println("Available from $ETOPO_URL")
+        exit()
+    else
+        global ETOPO, ETOPO_LONS, ETOPO_LATS
+        ETOPO = convert.(Float64, Dataset(ETOPO_FILE)["ROSE"][:,:])
+        ETOPO_LONS = convert.(Float64, Dataset(ETOPO_FILE)["ETOPO60X"][:,:])
+        ETOPO_LATS = convert.(Float64, Dataset(ETOPO_FILE)["ETOPO60Y"][:,:])
+    end
+end
+
+######################################################
+#
+# Data
 
 mutable struct InterpolationCellData
     cell::Cell
@@ -103,12 +161,14 @@ function _makecell(cellindex::Int64, lonsize::Int64, latsize::Int64)::Cell
 end
 
 # Perform the main interpolation for a cell
-function interpolatecell(cell::Cell, interpolationstep::UInt8, temporalacf::Array{Float64, 1})
+function interpolatecell(cell::Cell, interpolationstep::UInt8, temporalacf::Array{Float64, 1},
+    spatialacfs::Array{Union{Missing, Float64}, 4}, seamask::Array{UInt8, 2})
+
     data::InterpolationCellData = _loadinterpolationdata(cell)
 
     if !data.finished
         local logger::Tuple{SimpleLogger, IOStream} = _makelogger(cell, interpolationstep)
-        interpolate!(data, interpolationstep, temporalacf, logger[1])
+        interpolate!(data, interpolationstep, temporalacf, spatialacfs, seamask, logger[1])
         _closelogger(logger[2])
     end
 
@@ -119,21 +179,6 @@ end
 ###############################################################
 #
 # Interpolation stuff
-
-# Limits
-const MAX_STDEV = 75.0
-const MIN_TIME_SPAN = 1825 # 5 years
-const MONTH_END_DAYS = [31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334, 365]
-const MIN_POPULATED_MONTHS = 8
-const MAX_LINEAR_TREND = 4.5
-const MIN_LINEAR_TREND = -2.5
-const MAX_PEAKS_PER_YEAR = 2
-const MAX_PEAK_RATIO = 0.33
-const MIN_CURVE_RATIO = 0.5
-const MAX_CURVE_RATIO = 1.5
-const MAX_LIMIT_DIFFERENCE = 75
-const TEMPORAL_INTERPOLATION_LIMIT = 7
-
 
 # Structure to hold a series and its related data
 mutable struct SeriesData
@@ -172,7 +217,9 @@ mutable struct SeriesData
 end
 
 # Perform interpolation
-function interpolate!(data::InterpolationCellData, step::UInt8, temporalacf::Array{Float64, 1}, logger::SimpleLogger)
+function interpolate!(data::InterpolationCellData, step::UInt8, temporalacf::Array{Float64, 1},
+    spatialacfs::Array{Union{Missing, Float64}, 4}, seamask::Array{UInt8, 2}, logger::SimpleLogger)
+
     with_logger(logger) do
 
         local fitfound::Bool = false
@@ -198,6 +245,8 @@ function interpolate!(data::InterpolationCellData, step::UInt8, temporalacf::Arr
                 currentseries.weights = deepcopy(data.paraminputweights)
             else
                 # Need to do spatial interpolation
+                dospatialinterpolation!(data, spatialinterpolationcells, spatialinterpolationcount, spatialacfs, seamask)
+
                 println("Must do spatial interpolation.")
                 # Don't forget to use data.paraminputseries
                 exit()
@@ -495,6 +544,569 @@ function mergevalues!(original::Array{Union{Missing, Float64}, 1}, incoming::Arr
     end
 end
 
+# Perform one step of spatial interpolation
+function dospatialinterpolation!(data::InterpolationCellData, interpolationcells::Array{Cell, 1},
+    interpolationcount::UInt8, spatialacfs::Array{Union{Missing, Float64}, 4}, seamask::Array{UInt8, 2})
+
+    # Build the list of interpolation cells if it hasn't been done yet
+    if length(interpolationcells) == 0
+        interpolationcandidates = calculateinterpolationcells(data.cell, MAX_SPATIAL_INTERPOLATION_STEPS)
+        append!(interpolationcells, filterandsortinterpolationcells(data.cell,
+            interpolationcandidates, data.paraminputweights, data.paraminputuncertainties, spatialacfs, seamask))
+    end
+
+    @info "Performing spatial interpolation for cell $(data.cell.lon), $(data.cell.lat), cell $interpolationcount of $(length(interpolationcells))"
+    exit()
+end
+
+#=
+    if (is.null(spatial_interpolation_cells)) {
+        cat("Getting spatial interpolation cells\n")
+
+        interpolation_candidates <- calculateInterpolationCells(lon, lat, 10)
+        spatial_interpolation_cells <<- filterAndSortInterpolationCells(lon, lat, interpolation_candidates, weights, uncertainties)
+    }
+
+    if (length(spatial_interpolation_cells) == 0) {
+
+        # There are no interpolation candidates. Return the input data
+        interpolated_measurements <<- measurements
+        interpolated_weights <<- weights
+        interpolated_uncertainties <<- uncertainties
+    } else {
+
+        # Prepare data structures to hold the interpolated data. They will all be combined to
+        # work out the final interpolated values
+        interpolation_measurements <- vector(mode="numeric", length=(nrow(spatial_interpolation_cells) * length(measurements)))
+        interpolation_measurements[interpolation_measurements == 0] <- NA
+        dim(interpolation_measurements) <- c(nrow(spatial_interpolation_cells), length(measurements))
+
+        interpolation_weights <- interpolation_measurements
+        interpolation_uncertainties <- interpolation_measurements
+
+
+        # Retrieve the data for each interpolation cell
+        current_cell <- 0
+        for (i in 1:cell_count) {
+            interp_lon <- spatial_interpolation_cells[i, 1]
+            interp_lat <- spatial_interpolation_cells[i, 2]
+            interp_weight <- spatial_interpolation_cells[i, 3]
+            interp_uncertainty <- spatial_interpolation_cells[i, 4]
+
+            cat("INTERPOLATING TO",lon,lat,"from",interp_lon,interp_lat,"\n")
+
+            # The measurements are easiest - they simply get loaded
+            cell_measurements <- loadCellMeasurements(indir, interp_lon, interp_lat)
+
+            # All measurements have a weight assigned to them already. They must be further weighted by the
+            # distance over which they are being interpolated according to the spatial autocorrelation.
+            cell_weights <- loadCellWeights(indir, interp_lon, interp_lat)
+
+            current_cell <- current_cell + 1
+            cell_weights <- cell_weights * interp_weight
+
+            # All measurements have an uncertainty associated with them already. The uncertainty
+            # must be increased as the values are interpolated.
+            cell_uncertainties <- loadCellUncertainties(indir, interp_lon, interp_lat)
+
+            cell_uncertainties <- sqrt(cell_uncertainties^2 + interp_uncertainty^2)
+
+            # Add the interpolated cell's details to the data structure
+            for (j in 1:length(measurements)) {
+                interpolation_measurements[current_cell,j] <- cell_measurements[j]
+                interpolation_weights[current_cell,j] <- cell_weights[j]
+                interpolation_uncertainties[current_cell,j] <- cell_uncertainties[j]
+            }
+        }
+
+        # Now combine all the interpolated cells with the original measurements to make a single time series
+        output_measurements <- vector(mode="numeric", length=length(measurements))
+        output_measurements[output_measurements == 0] <- NA
+
+        output_weights <- output_measurements
+        output_uncertainties <- output_measurements
+
+        for (i in 1:length(measurements)) {
+
+            # Calculate the weighted mean measurement and mean uncertainty from all interpolated cells
+            weighted_mean <- sum(interpolation_measurements[,i] * interpolation_weights[,i],na.rm=T) / sum(interpolation_weights[,i],na.rm=T)
+            mean_weight <- mean(interpolation_weights[,i],na.rm=T)
+            mean_uncertainty <- sqrt(sqrt(sum(interpolation_uncertainties[,i]**2,na.rm=T)) / sum(!is.na(interpolation_uncertainties[,i]))^2 + 2.5^2)
+            output_measurements[i] <- weighted_mean
+            output_weights[i] <- mean_weight
+            output_uncertainties[i] <- mean_uncertainty
+        }
+
+        # Push the interpolated values up to the calling function
+        interpolated_measurements <<- output_measurements
+        interpolated_weights <<- output_weights
+        interpolated_uncertainties <<- output_uncertainties
+    }
+=#
+
+# Determine candidate cells for spatial interpolation of a given cell
+function calculateinterpolationcells(cell::Cell, maxstep::Int64)::Array{Cell, 1}
+
+    # Work out how many interpolation cells there will be.
+    # Each step means (8 * step) cells are added to the list.
+    # The number of cells is therefore the triangular number of steps * 8
+    # I have discovered a truly marvellous proof of why this is the case,
+    # but this comment is too brief to contain it.
+    local interpolationcells::Array{Cell, 1} = Array{Cell, 1}()
+
+    for step_loop in 1:maxstep
+        for y in (step_loop * -1):step_loop
+            local celly::UInt16 = calcspatialinterpycell(cell.lat, y)
+            if celly != NO_CELL
+
+                # For the top and bottom rows of the step grid, add all horizontal cells
+                if abs(y) == step_loop
+                    for x in (step_loop * -1):step_loop
+                        local cellx::UInt16 = calcspatialinterpxcell(cell.lon, x)
+                        push!(interpolationcells, (lon = cellx, lat = celly))
+                    end
+                else
+                    # For all other rows, just add the left and right edges
+                    local cellx::UInt16 = calcspatialinterpxcell(cell.lon, (step_loop * -1))
+                    push!(interpolationcells, (lon = cellx, lat = celly))
+
+                    cellx = calcspatialinterpxcell(cell.lon, step_loop)
+                    push!(interpolationcells, (lon = cellx, lat = celly))
+                end
+            end
+        end
+    end
+
+    interpolationcells
+end
+
+# Filter a set of interpolation cell candidates to remove unusable cells and sort them by
+# lowest uncertainty/highest weight
+function filterandsortinterpolationcells(cell::Cell, interpolationcandidates::Array{Cell, 1},
+    weights::Array{Union{Missing, Float64}, 1}, uncertainties::Array{Union{Missing, Float64}, 1},
+    spatialacfs::Array{Union{Missing, Float64}, 4}, seamask::Array{UInt8, 2})
+
+    local interpolationcells::Array{Tuple{Cell, Float64, Float64}, 1} = Array{Tuple{Cell, Float64, Float64}, 1}()
+
+    local cellcount::Int16 = 0
+
+    for candidate in interpolationcandidates
+        # Only process sea cells
+        if seamask[candidate.lon, candidate.lat] == 1
+            if !islandbetween(cell, candidate)
+                local weight::Float64 = getspatialinterpolationweight(cell, candidate, spatialacfs)
+
+                println("No land!")
+                exit()
+            end
+        end
+    end
+
+end
+
+
+#=
+
+    # The output of this is a table of lon, lat, weight, uncertainty.
+    # Sorted by uncertainty, distance between cells, weight, lon, lat
+    lons <- vector(mode="numeric", length=nrow(candidates))
+    lons[lons == 0] <- NA
+
+    lats <- lons
+    weights <- lons
+    uncertainties <- lons
+
+    cell_count <- 0
+
+    for (i in 1:nrow(candidates)) {
+
+        cell_lon <- candidates[i, 1]
+        cell_lat <- candidates[i, 2]
+
+        if (!is.na(cell_lon) && !is.na(cell_lat)) {
+
+            # If the cell is land, skip it
+            if (sea[cell_lon, cell_lat] == 1) {
+                # If there's land between the two cells, we can't go any further
+                if (!landBetween(lon, lat, cell_lon, cell_lat)) {
+                    # Get the spatial interpolation weight. If this is below the interpolation threshold,
+                    # we discard the cell.
+                    weight <- getSpatialInterpolationWeight(lon, lat, cell_lon, cell_lat)
+                    if (weight >= SPATIAL_INTERPOLATION_WEIGHT_LIMIT) {
+                    #if (weight >= 0) {
+
+                        # Now get the uncertainty. The list of candidate cells will be sorted by this
+                        uncertainty <- getSpatialInterpolationUncertainty(lon, lat, cell_lon, cell_lat)
+                        cell_count <- cell_count + 1
+
+                        lons[cell_count] <- cell_lon
+                        lats[cell_count] <- cell_lat
+                        weights[cell_count] <- weight
+                        uncertainties[cell_count] <- uncertainty
+                    }
+                }
+            }
+        }
+    }
+
+    if (sum(!is.na(uncertainties)) == 0) {
+        result <- vector(mode="numeric", length=0)
+    } else {
+
+        sorted_indices <- order(uncertainties, -weights, lons, lats)
+
+        result <- vector(mode="numeric", length=(sum(!is.na(lons)) * 4))
+        dim(result) <- c(sum(!is.na(lons)), 4)
+
+        result[,1] <- lons[sorted_indices][!is.na(lons)]
+        result[,2] <- lats[sorted_indices][!is.na(lons)]
+        result[,3] <- weights[sorted_indices][!is.na(lons)]
+        result[,4] <- uncertainties[sorted_indices][!is.na(lons)]
+    }
+
+    return (result)
+}
+
+
+
+=#
+
+# Calculate the weighting to be used for spatial interpolation between two cells
+function getspatialinterpolationweight(source::Cell, dest::Cell, spatialacfs::Array{Union{Missing, Float64}, 4})::Float64
+
+    local weight::Float64 = 0.0
+
+    # Here we use the mean_directional_acfs object loaded at the start of the program.
+    # This is a 4D array of lat, lon, direction, distance
+    # Distances are in bins of ACF_LAG_STEP km. We calculate the weighting from the
+    # centre of the two cells.
+    local distance::Float64 = calccelldistance(source, dest)
+    local distancebin::Int16 = floor(distance / SPATIAL_ACF_LAG_STEP) + 1
+    local bearing::Float64 = calccellbearing(source, dest)
+    local acfdirection::UInt8 = getacfdirection(bearing)
+
+    local sourcecentrelon::Float64 = (source.lon * GRID_SIZE) - (GRID_SIZE / 2)
+    local sourcecentrelat::Float64 = (source.lat * GRID_SIZE) - (90 + (GRID_SIZE / 2))
+    local destcentrelon::Float64 = (dest.lon * GRID_SIZE) - (GRID_SIZE / 2)
+    local destcentrelat::Float64 = (dest.lat * GRID_SIZE) - (90 + (GRID_SIZE / 2))
+
+    local acfvalue::Union{Missing, Float64} = spatialacfs[source.lon, source.lat, acfdirection, distancebin]
+    local reverseacfvalue::Union{Missing, Float64} = spatialacfs[dest.lon, dest.lat, acfdirection, distancebin]
+
+
+    println(ismissing(acfvalue))
+    println(reverseacfvalue)
+    exit()
+    weight
+end
+#=
+    weight <- 0
+
+    # Here we use the mean_directional_acfs object loaded at the start of the program.
+    # This is a 4D array of lat, lon, direction, distance
+    # Distances are in bins of ACF_LAG_STEP km. We calculate the weighting from the
+    # centre of the two cells.
+    target_centre_lon <- (target_lon * LON_CELL_SIZE) - (LON_CELL_SIZE / 2)
+    target_centre_lat <- (target_lat * LAT_CELL_SIZE) - (90 + (LAT_CELL_SIZE / 2))
+    interp_centre_lon <- (interp_lon * LON_CELL_SIZE) - (LON_CELL_SIZE / 2)
+    interp_centre_lat <- (interp_lat * LAT_CELL_SIZE) - (90 + (LAT_CELL_SIZE / 2))
+
+    # We need to know the distance and bearing between the two grid cells
+    distance <- calcCellDistance(target_lon, target_lat, interp_lon, interp_lat)
+
+    # There's a bug near the poles which means we sometimes disappear off the globe.
+    # This only happens if the ACF weight is also off the scale, so we can just ignore
+    # this eventuality.
+    if (!is.na(distance)) {
+        distance_bin <- trunc(distance / SPATIAL_ACF_LAG_STEP) + 1
+        bearing <- calcCellBearing(target_lon, target_lat, interp_lon, interp_lat)
+        acf_direction <- getACFDirection(bearing)
+
+        # We can use the ACF from both the interp and target cells, since they are
+        # are in the same direction and therefore equivalent
+        acf_value <- mean_directional_acfs[target_lat, target_lon, acf_direction, distance_bin]
+        reverse_acf_value <- mean_directional_acfs[interp_lat, interp_lon, acf_direction, distance_bin]
+
+        if (!is.na(acf_value) && !is.na(reverse_acf_value)) {
+            weight <- (acf_value + reverse_acf_value) / 2
+        } else if (!is.na(acf_value)) {
+            weight <- acf_value
+        } else if (!is.na(reverse_acf_value)) {
+            weight <- reverse_acf_value
+        } else {
+            # If there are no directional ACF values, use the omnidirectional value
+            # for the target cell only. If this doesn't exist, we have to return a zero
+            # weight because we can't guess at whether or not the two cells' values are related
+            weight <- mean_directional_acfs[target_lat, target_lon, 5, distance_bin]
+            if (is.na(weight)) {
+                weight <- 0
+            }
+        }
+    }
+
+    # Anything below the weighting limit is given a weighting of zero
+    if (weight < SPATIAL_INTERPOLATION_WEIGHT_LIMIT) {
+        weight <- 0
+    }
+
+    return (weight)
+}
+=#
+
+# Get the ACF direction of a bearing
+#
+# 1 = NORTH/SOUTH
+# 2 = EAST/WEST
+# 3 = NE/SW
+# 4 = SE/NW
+function getacfdirection(bearing::Float64)::UInt8
+
+    direction::UInt8 = 0
+
+    if bearing ≤ 22.5 ||
+       bearing ≥ 337.5 ||
+       (bearing ≥ 157.5 && bearing ≤ 202.5)
+
+       direction = 1
+
+    elseif (bearing ≥ 67.5 && bearing ≤ 112.5) ||
+           (bearing ≥ 247.5 && bearing ≤ 292.5)
+
+        direction = 2
+
+    elseif (bearing ≥ 22.5 && bearing ≤ 67.5) ||
+           (bearing ≥ 202.5 && bearing ≤ 247.5)
+
+        direction = 3
+
+    elseif (bearing ≥ 112.5 && bearing ≤ 157.5) ||
+            (bearing ≥ 292.5 && bearing ≤ 337.5)
+
+        direction = 4
+
+    end
+
+    direction
+end
+
+# Calculate the distance between two cells in km
+#
+# θ = lat, λ = lon (radians)
+function calccelldistance(cell1::Cell, cell2::Cell)::Float64
+
+    # Calculate lats and lons in radians
+    local λ1::Float64, θ1::Float64 = _getcellradians(cell1)
+    local λ2::Float64, θ2::Float64 = _getcellradians(cell2)
+
+    local ∆θ::Float64 = θ2 - θ1
+    local ∆λ::Float64 = λ2 - λ1
+
+    local a::Float64 = sin(∆θ/2)^2 + cos(θ1) * cos(θ2) * sin(∆λ/2)^2
+    local c::Float64 = 2 * atan(√a, √(1-a))
+
+    c * EARTH_RADIUS
+end
+
+# Calculate the bearing between two cells, on rhumb lines
+# θ = lat, λ = lon (radians)
+# Bearing is returned in degrees
+function calccellbearing(source::Cell, dest::Cell)::Float64
+
+    # Calculate lats and lons in radians
+    local λ1::Float64, θ1::Float64 = _getcellradians(source)
+    local λ2::Float64, θ2::Float64 = _getcellradians(dest)
+
+    local ∆λ::Float64 = λ2 - λ1
+    local ∆ψ::Float64 = log(tan(π/4 + θ2/2) / tan(π/4 + θ1/2))
+
+    if abs(∆λ) > π
+        ∆λ = ∆λ > 0 ? -2π - ∆λ : 2π + ∆λ
+    end
+
+    local bearing::Float64 = atan(∆λ, ∆ψ) * 180/π
+    if bearing < 0
+        bearing = 360.0 - abs(bearing)
+    end
+
+    bearing
+end
+
+# Determine whether there is any land between two cells
+function islandbetween(source::Cell, target::Cell)::Bool
+
+    local sourcex::Int16 = getetopolonindex(source.lon)
+    local sourcey::Int16 = getetopolatindex(source.lat)
+    local targetx::Int16 = getetopolonindex(target.lon)
+    local targety::Int16 = getetopolatindex(target.lat)
+
+    # Step through all cells in etopo between the two cells passed in
+    # This uses an extension of the Bresenham algorithm by Eugen Dedu
+    # http://lifc.univ-fcomte.fr/~dedu/projects/bresenham/index.html
+    local foundland::Bool = false
+
+    local i::Int16 = 0
+    local ystep::Int16 = 0
+    local xstep::Int16 = 0
+    local currenterror::Int16 = 0
+    local preverror::Int16 = 0
+    local y::Int16 = sourcey
+    local x::Int16 = sourcex
+    local ∂∂y::Int16 = 0
+    local ∂∂x::Int16 = 0
+    local ∂y::Int16 = targety - sourcey
+    local ∂x::Int16 = targetx - sourcex
+    local currentx::Int16 = sourcex
+    local currenty::Int16 = sourcey
+
+    if ∂y < 0
+        ystep = -1
+        ∂y = -∂y
+    else
+        ystep = 1
+    end
+
+    if ∂x < 0
+        xstep = -1
+        ∂x = -∂x
+    else
+        xstep = 1
+    end
+
+    ∂∂y = 2∂y
+    ∂∂x = 2∂x
+
+    if ∂∂x ≥ ∂∂y
+        currenterror = ∂x
+        preverror = ∂x
+
+        for i in 0:(∂x - 1)
+            if foundland
+                break
+            end
+
+            x += xstep
+            currenterror += ∂∂y
+
+            if currenterror > ∂∂x
+                y += ystep
+                currenterror -= ∂∂x
+
+                if currenterror + preverror < ∂∂x
+                    currenty = y - ystep
+                    currentx = x
+                    foundland = isetopoland(currentx, currenty)
+                elseif currenterror + preverror > ∂∂x
+                    currenty = y
+                    currentx = x - xstep
+                    foundland = isetopoland(currentx, currenty)
+                else
+                    currenty = y - ystep
+                    currentx = x
+                    foundland = isetopoland(currentx, currenty)
+
+                    currenty = y
+                    currentx = x - xstep
+                    foundland = isetopoland(currentx, currenty)
+                end
+            end
+
+            currenty = y
+            currentx = x
+            foundland = isetopoland(currentx, currenty)
+            preverror = currenterror
+        end
+    else
+
+        currenterror = ∂y
+        preverror = ∂y
+
+        for i in 0:(∂y - 1)
+            if foundland
+                break
+            end
+
+            y += ystep
+            currenterror += ∂∂x
+
+            if currenterror > ∂∂y
+                x += xstep
+                currenterror -= ∂∂y
+
+                if currenterror + preverror < ∂∂y
+                    currenty = y
+                    currentx -= xstep
+                    foundland = isetopoland(currentx, currenty)
+                elseif currenterror + preverror > ∂∂y
+                    currenty -= ystep
+                    currentx = x
+                    foundland = isetopoland(currentx, currenty)
+                else
+                    currenty = y
+                    currentx -= xstep
+                    foundland = isetopoland(currentx, currenty)
+
+                    currenty -= ystep
+                    currentx = x
+                    foundland = isetopoland(currentx, currenty)
+                end
+            end
+
+            currenty = y
+            currentx = x
+            foundland = isetopoland(currentx, currenty)
+
+            preverror = currenterror
+        end
+
+    end
+
+    foundland
+end
+
+function isetopoland(x::Int16, y::Int16)::Bool
+    ETOPO[x, y] ≥ 0
+end
+
+# Convert an interpolation grin lon index to an ETOPO lon index
+function getetopolonindex(lonindex::UInt16)::Int16
+    local lon_degrees::Float64 = (lonindex * GRID_SIZE) - (GRID_SIZE / 2)
+
+    # ETOPO longitudes are 20 - 380 for some reason
+    if lon_degrees ≤ 20
+        lon_degrees += 360
+    end
+
+    convert(Int16, findfirst(ETOPO_LONS .≥ floor(lon_degrees)))
+end
+
+# Convert an interpolation grin lat index to an ETOPO lat index
+function getetopolatindex(latindex::UInt16)::Int16
+    local lat_degrees::Float64 = (latindex * GRID_SIZE) - (90 + GRID_SIZE / 2)
+    convert(Int16, findfirst(ETOPO_LATS .≥ floor(lat_degrees)))
+end
+
+# Get the longitude cell index that is x cells from the specified lon cell index
+function calcspatialinterpxcell(lon::UInt16, x::Int64)::UInt16
+    local newx::Int64 = lon + x
+    if newx > LON_SIZE
+        newx = newx - LON_SIZE
+    elseif newx < 1
+        newx = LON_SIZE - abs(newx)
+    end
+
+    convert(UInt16, newx)
+end
+
+# Get the latitude cell index that is y cells from the specified lat cell index
+function calcspatialinterpycell(lat::UInt16, y::Int64)::UInt16
+    local newy::UInt16 = convert(UInt16, lat + y)
+    if newy > LAT_SIZE || newy < 1
+        newy = NO_CELL
+    end
+
+    newy
+end
+
 # Make a curve using the supplied parameters
 function makecurve(params::Array{Float64, 1}, curvelength::Int64)::Array{Float64, 1}
 
@@ -721,6 +1333,13 @@ end
 # Count the number of non-missing values in a series
 function _countvalues(series::Array{Union{Missing, Float64}, 1})::Int64
     length(collect(skipmissing(series)))
+end
+
+# Get a cell's lon/lat in radians
+function _getcellradians(cell::Cell)::Tuple{Float64, Float64}
+    local lon::Float64 = (cell.lon * GRID_SIZE - GRID_SIZE / 2) * π/180
+    local lat::Float64 = (cell.lat * GRID_SIZE - 90 - GRID_SIZE / 2) * π/180
+    (lon, lat)
 end
 
 end #module

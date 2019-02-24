@@ -2,6 +2,11 @@
 # For use during development. In production, this should be true
 const __INIT_DATA__ = false
 
+# Indicates whether the program should stop after initialising the data
+# In production this should be false.
+# If __INIT_DATA__ = false and this = true, nothing will happen
+const __INIT_ONLY__ = false
+
 using Distributed
 using NCDatasets
 using ProgressMeter
@@ -23,9 +28,9 @@ function run()
 	## LOAD DATA
 	local loadcount::UInt8 = 0
 	if __INIT_DATA__
-		loadcount = 8
+		loadcount = 9
 	else
-		loadcount = 5
+		loadcount = 7
 	end
 	local loadprogress::Progress = Progress(loadcount, 1, "Loading data...")
 
@@ -45,10 +50,8 @@ function run()
 	end
 
 	# Sea mask
-	if __INIT_DATA__
-		local seamask::Array{UInt8, 2} = convert.(UInt8, Dataset(SEA_FILE)["SEA"][:,:])
-		next!(loadprogress)
-	end
+	local seamask::Array{UInt8, 2} = convert.(UInt8, Dataset(SEA_FILE)["SEA"][:,:])
+	next!(loadprogress)
 
 	# Spatial variation
 	local inchan::IOStream = open(SPATIAL_VARIATION_FILE, "r")
@@ -61,10 +64,15 @@ function run()
 	next!(loadprogress)
 
 	local temporalacf::Array{Float64, 1} = readdlm(TEMPORAL_ACFS_FILE, ',', Float64, '\n')[:,2]
+
+	# Initialise InterpolationData module, incl. loading bathymetry
+	InterpolationData.init(length(lons), length(lats))
+
 	finish!(loadprogress)
 
 	######################################
 	## SET UP DATA STRUCTURES
+
 	local cells::Array{Cell, 1} = []
 	if __INIT_DATA__
 		cells = makecells(length(lons), length(lats), length(times), seamask, fco2, uncertainty)
@@ -77,7 +85,10 @@ function run()
 	if __INIT_DATA__
 		fco2 = zeros(1, 1, 1)
 		uncertainty = zeros(1, 1, 1)
-		seamask = zeros(1, 1)
+	end
+
+	if __INIT_ONLY__
+		exit()
 	end
 
 	######################################
@@ -96,7 +107,7 @@ function run()
 	#end
 
 	testcell::Cell = (lon=69, lat=25)
-	interpolatecell(testcell, convert(UInt8, 1), temporalacf)
+	interpolatecell(testcell, convert(UInt8, 1), temporalacf, spatialacfs, seamask)
 
 #	println("Final finished count: $lastfinishedcount")
 
