@@ -55,8 +55,9 @@ function run()
 
 	# Spatial variation
 	local inchan::IOStream = open(SPATIAL_VARIATION_FILE, "r")
-	local spatialvariation::Array{Float64, 4} = deserialize(inchan)
+	local spatialvariation::Array{Union{Missing, Float64}, 4} = deserialize(inchan)
 	close(inchan)
+	replace!(spatialvariation, -1e35=>missing)
 	next!(loadprogress)
 
 	# Autocorrelation data
@@ -107,7 +108,7 @@ function run()
 	#end
 
 	testcell::Cell = (lon=69, lat=25)
-	interpolatecell(testcell, convert(UInt8, 1), temporalacf, spatialacfs, seamask)
+	interpolatecell(testcell, convert(UInt8, 1), temporalacf, spatialacfs, spatialvariation, seamask)
 
 #	println("Final finished count: $lastfinishedcount")
 

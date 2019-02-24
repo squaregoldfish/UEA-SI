@@ -32,6 +32,7 @@ const MAX_CURVE_RATIO = 1.5
 const MAX_LIMIT_DIFFERENCE = 75
 const TEMPORAL_INTERPOLATION_LIMIT = 7
 const MAX_SPATIAL_INTERPOLATION_STEPS = 10
+const SPATIAL_INTERPOLATION_WEIGHT_LIMIT = 0.367879
 
 
 ######################################################
@@ -162,13 +163,13 @@ end
 
 # Perform the main interpolation for a cell
 function interpolatecell(cell::Cell, interpolationstep::UInt8, temporalacf::Array{Float64, 1},
-    spatialacfs::Array{Union{Missing, Float64}, 4}, seamask::Array{UInt8, 2})
+    spatialacfs::Array{Union{Missing, Float64}, 4}, spatialvariation::Array{Union{Missing, Float64}, 4}, seamask::Array{UInt8, 2})
 
     data::InterpolationCellData = _loadinterpolationdata(cell)
 
     if !data.finished
         local logger::Tuple{SimpleLogger, IOStream} = _makelogger(cell, interpolationstep)
-        interpolate!(data, interpolationstep, temporalacf, spatialacfs, seamask, logger[1])
+        interpolate!(data, interpolationstep, temporalacf, spatialacfs, spatialvariation, seamask, logger[1])
         _closelogger(logger[2])
     end
 
@@ -218,7 +219,8 @@ end
 
 # Perform interpolation
 function interpolate!(data::InterpolationCellData, step::UInt8, temporalacf::Array{Float64, 1},
-    spatialacfs::Array{Union{Missing, Float64}, 4}, seamask::Array{UInt8, 2}, logger::SimpleLogger)
+    spatialacfs::Array{Union{Missing, Float64}, 4}, spatialvariation::Array{Union{Missing, Float64}, 4},
+    seamask::Array{UInt8, 2}, logger::SimpleLogger)
 
     with_logger(logger) do
 
@@ -245,7 +247,8 @@ function interpolate!(data::InterpolationCellData, step::UInt8, temporalacf::Arr
                 currentseries.weights = deepcopy(data.paraminputweights)
             else
                 # Need to do spatial interpolation
-                dospatialinterpolation!(data, spatialinterpolationcells, spatialinterpolationcount, spatialacfs, seamask)
+                dospatialinterpolation!(data, spatialinterpolationcells, spatialinterpolationcount,
+                    spatialacfs, spatialvariation, seamask)
 
                 println("Must do spatial interpolation.")
                 # Don't forget to use data.paraminputseries
@@ -546,13 +549,15 @@ end
 
 # Perform one step of spatial interpolation
 function dospatialinterpolation!(data::InterpolationCellData, interpolationcells::Array{Cell, 1},
-    interpolationcount::UInt8, spatialacfs::Array{Union{Missing, Float64}, 4}, seamask::Array{UInt8, 2})
+    interpolationcount::UInt8, spatialacfs::Array{Union{Missing, Float64}, 4},
+    spatialvariation::Array{Union{Missing, Float64}, 4}, seamask::Array{UInt8, 2})
 
     # Build the list of interpolation cells if it hasn't been done yet
     if length(interpolationcells) == 0
         interpolationcandidates = calculateinterpolationcells(data.cell, MAX_SPATIAL_INTERPOLATION_STEPS)
         append!(interpolationcells, filterandsortinterpolationcells(data.cell,
-            interpolationcandidates, data.paraminputweights, data.paraminputuncertainties, spatialacfs, seamask))
+            interpolationcandidates, data.paraminputweights, data.paraminputuncertainties,
+            spatialacfs, spatialvariation, seamask))
     end
 
     @info "Performing spatial interpolation for cell $(data.cell.lon), $(data.cell.lat), cell $interpolationcount of $(length(interpolationcells))"
@@ -684,9 +689,14 @@ end
 # lowest uncertainty/highest weight
 function filterandsortinterpolationcells(cell::Cell, interpolationcandidates::Array{Cell, 1},
     weights::Array{Union{Missing, Float64}, 1}, uncertainties::Array{Union{Missing, Float64}, 1},
-    spatialacfs::Array{Union{Missing, Float64}, 4}, seamask::Array{UInt8, 2})
+    spatialacfs::Array{Union{Missing, Float64}, 4}, spatialvariation::Array{Union{Missing, Float64}, 4}, seamask::Array{UInt8, 2})
 
-    local interpolationcells::Array{Tuple{Cell, Float64, Float64}, 1} = Array{Tuple{Cell, Float64, Float64}, 1}()
+    # The output of this is a table of cell, weight, uncertainty.
+    # Sorted by uncertainty, distance between cells, weight, cell.lon, cell.lat
+
+
+    local interpolationcells::Array{Tuple{Cell, Union{Float64, Missing}, Union{Float64, Missing}}, 1} =
+        Array{Tuple{Cell, Union{Float64, Missing}, Union{Float64, Missing}}, 1}()
 
     local cellcount::Int16 = 0
 
@@ -696,8 +706,15 @@ function filterandsortinterpolationcells(cell::Cell, interpolationcandidates::Ar
             if !islandbetween(cell, candidate)
                 local weight::Float64 = getspatialinterpolationweight(cell, candidate, spatialacfs)
 
-                println("No land!")
-                exit()
+                if weight ≥ SPATIAL_INTERPOLATION_WEIGHT_LIMIT
+                    cellcount += 1
+
+                    # Now get the uncertainty. The list of candidate cells will be sorted by this
+                    local uncertainty::Union{Float64, Missing} = getspatialinterpolationuncertainty(cell, candidate, spatialvariation)
+                    println(uncertainty)
+                    println(cellcount)
+                    exit()
+                end
             end
         end
     end
@@ -732,6 +749,8 @@ end
                     # Get the spatial interpolation weight. If this is below the interpolation threshold,
                     # we discard the cell.
                     weight <- getSpatialInterpolationWeight(lon, lat, cell_lon, cell_lat)
+
+***********************
                     if (weight >= SPATIAL_INTERPOLATION_WEIGHT_LIMIT) {
                     #if (weight >= 0) {
 
@@ -771,10 +790,46 @@ end
 
 =#
 
-# Calculate the weighting to be used for spatial interpolation between two cells
-function getspatialinterpolationweight(source::Cell, dest::Cell, spatialacfs::Array{Union{Missing, Float64}, 4})::Float64
+# Retrieve the uncertainty for the interpolation between two cells
+function getspatialinterpolationuncertainty(source::Cell, dest::Cell,
+    spatialvariation::Array{Union{Missing, Float64}, 4})::Union{Float64, Missing}
 
-    local weight::Float64 = 0.0
+    local uncertainty::Union{Float64, Missing} = missing
+
+    # Here we use the pco2_spatial_variation object loaded at the start of the program.
+    # This is a 4D array of <target_lon, target_lat, interp_lon, interp_lat>
+    # The values in this object are the mean difference in pCO2 between two cells
+    # within a small time period.
+
+    # We can use the uncertainty from both the interp and target cells, since they are
+    # are in the same direction and therefore equivalent
+    local forwarduncertainty::Union{Missing, Float64} = spatialvariation[source.lon, source.lat, dest.lon, dest.lat]
+    local reverseuncertainty::Union{Missing, Float64} = spatialvariation[dest.lon, dest.lat, source.lon, source.lat]
+
+    if length(collect(skipmissing([forwarduncertainty, reverseuncertainty]))) > 0
+        uncertainty = mean(skipmissing([forwarduncertainty, reverseuncertainty]))
+    else
+        # If we can't find an uncertainty for the specific cell combination, use the
+        # mean uncertainty from the cells surrounding the target cell
+        local uncertaintycells::Array{Cell, 1} = calculateinterpolationcells(source, 1)
+        local uncertainties::Array{Union{Missing, Float64}, 1} = []
+
+        for uncertaintycell in uncertaintycells
+            push!(uncertainties, spatialvariation[source.lon, source.lat, uncertaintycell.lon, uncertaintycell.lat])
+        end
+
+        if length(collect(skipmissing(uncertainties))) > 0
+            uncertainty = mean(skipmissing(uncertainties))
+        end
+    end
+
+    uncertainty
+end
+
+# Calculate the weighting to be used for spatial interpolation between two cells
+function getspatialinterpolationweight(source::Cell, dest::Cell, spatialacfs::Array{Union{Missing, Float64}, 4})::Union{Float64, Missing}
+
+    local weight::Union{Float64, Missing} = missing
 
     # Here we use the mean_directional_acfs object loaded at the start of the program.
     # This is a 4D array of lat, lon, direction, distance
@@ -790,68 +845,31 @@ function getspatialinterpolationweight(source::Cell, dest::Cell, spatialacfs::Ar
     local destcentrelon::Float64 = (dest.lon * GRID_SIZE) - (GRID_SIZE / 2)
     local destcentrelat::Float64 = (dest.lat * GRID_SIZE) - (90 + (GRID_SIZE / 2))
 
+
+    # We can use the ACF from both the source and dest cells, since they are
+    # are in the same direction and therefore equivalent
     local acfvalue::Union{Missing, Float64} = spatialacfs[source.lon, source.lat, acfdirection, distancebin]
     local reverseacfvalue::Union{Missing, Float64} = spatialacfs[dest.lon, dest.lat, acfdirection, distancebin]
 
-
-    println(ismissing(acfvalue))
-    println(reverseacfvalue)
-    exit()
-    weight
-end
-#=
-    weight <- 0
-
-    # Here we use the mean_directional_acfs object loaded at the start of the program.
-    # This is a 4D array of lat, lon, direction, distance
-    # Distances are in bins of ACF_LAG_STEP km. We calculate the weighting from the
-    # centre of the two cells.
-    target_centre_lon <- (target_lon * LON_CELL_SIZE) - (LON_CELL_SIZE / 2)
-    target_centre_lat <- (target_lat * LAT_CELL_SIZE) - (90 + (LAT_CELL_SIZE / 2))
-    interp_centre_lon <- (interp_lon * LON_CELL_SIZE) - (LON_CELL_SIZE / 2)
-    interp_centre_lat <- (interp_lat * LAT_CELL_SIZE) - (90 + (LAT_CELL_SIZE / 2))
-
-    # We need to know the distance and bearing between the two grid cells
-    distance <- calcCellDistance(target_lon, target_lat, interp_lon, interp_lat)
-
-    # There's a bug near the poles which means we sometimes disappear off the globe.
-    # This only happens if the ACF weight is also off the scale, so we can just ignore
-    # this eventuality.
-    if (!is.na(distance)) {
-        distance_bin <- trunc(distance / SPATIAL_ACF_LAG_STEP) + 1
-        bearing <- calcCellBearing(target_lon, target_lat, interp_lon, interp_lat)
-        acf_direction <- getACFDirection(bearing)
-
-        # We can use the ACF from both the interp and target cells, since they are
-        # are in the same direction and therefore equivalent
-        acf_value <- mean_directional_acfs[target_lat, target_lon, acf_direction, distance_bin]
-        reverse_acf_value <- mean_directional_acfs[interp_lat, interp_lon, acf_direction, distance_bin]
-
-        if (!is.na(acf_value) && !is.na(reverse_acf_value)) {
-            weight <- (acf_value + reverse_acf_value) / 2
-        } else if (!is.na(acf_value)) {
-            weight <- acf_value
-        } else if (!is.na(reverse_acf_value)) {
-            weight <- reverse_acf_value
-        } else {
-            # If there are no directional ACF values, use the omnidirectional value
-            # for the target cell only. If this doesn't exist, we have to return a zero
-            # weight because we can't guess at whether or not the two cells' values are related
-            weight <- mean_directional_acfs[target_lat, target_lon, 5, distance_bin]
-            if (is.na(weight)) {
-                weight <- 0
-            }
-        }
-    }
+    if length(collect(skipmissing([acfvalue, reverseacfvalue]))) > 0
+        weight = mean(skipmissing([acfvalue, reverseacfvalue]))
+    else
+        # If there are no directional ACF values, use the omnidirectional value
+        # for the target cell only. If this doesn't exist, we have to return a zero
+        # weight because we can't guess at whether or not the two cells' values are related
+        local omnidirectionalacfvalue::Float64 = spatialacfs[source.lon, source.lat, 5, distancebin]
+        if !ismissing(omnidirectionalacfvalue)
+            weight = omnidirectionalacfvalue
+        end
+    end
 
     # Anything below the weighting limit is given a weighting of zero
-    if (weight < SPATIAL_INTERPOLATION_WEIGHT_LIMIT) {
-        weight <- 0
-    }
+    if weight < SPATIAL_INTERPOLATION_WEIGHT_LIMIT
+        weight = missing
+    end
 
-    return (weight)
-}
-=#
+    weight
+end
 
 # Get the ACF direction of a bearing
 #
