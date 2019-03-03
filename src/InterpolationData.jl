@@ -693,8 +693,6 @@ function filterandsortinterpolationcells(cell::Cell, interpolationcandidates::Ar
 
     # The output of this is a table of cell, weight, uncertainty.
     # Sorted by uncertainty, distance between cells, weight, cell.lon, cell.lat
-
-
     local interpolationcells::Array{Tuple{Cell, Union{Float64, Missing}, Union{Float64, Missing}}, 1} =
         Array{Tuple{Cell, Union{Float64, Missing}, Union{Float64, Missing}}, 1}()
 
@@ -704,69 +702,27 @@ function filterandsortinterpolationcells(cell::Cell, interpolationcandidates::Ar
         # Only process sea cells
         if seamask[candidate.lon, candidate.lat] == 1
             if !islandbetween(cell, candidate)
-                local weight::Float64 = getspatialinterpolationweight(cell, candidate, spatialacfs)
+                local weight::Union{Float64, Missing} = getspatialinterpolationweight(cell, candidate, spatialacfs)
 
-                if weight ≥ SPATIAL_INTERPOLATION_WEIGHT_LIMIT
+                if !ismissing(weight) && weight ≥ SPATIAL_INTERPOLATION_WEIGHT_LIMIT
                     cellcount += 1
 
                     # Now get the uncertainty. The list of candidate cells will be sorted by this
                     local uncertainty::Union{Float64, Missing} = getspatialinterpolationuncertainty(cell, candidate, spatialvariation)
-                    println(uncertainty)
-                    println(cellcount)
-                    exit()
+                    push!(interpolationcells, (candidate, weight, uncertainty))
                 end
             end
         end
     end
+
+    print(interpolationcells)
+    exit()
 
 end
 
 
 #=
 
-    # The output of this is a table of lon, lat, weight, uncertainty.
-    # Sorted by uncertainty, distance between cells, weight, lon, lat
-    lons <- vector(mode="numeric", length=nrow(candidates))
-    lons[lons == 0] <- NA
-
-    lats <- lons
-    weights <- lons
-    uncertainties <- lons
-
-    cell_count <- 0
-
-    for (i in 1:nrow(candidates)) {
-
-        cell_lon <- candidates[i, 1]
-        cell_lat <- candidates[i, 2]
-
-        if (!is.na(cell_lon) && !is.na(cell_lat)) {
-
-            # If the cell is land, skip it
-            if (sea[cell_lon, cell_lat] == 1) {
-                # If there's land between the two cells, we can't go any further
-                if (!landBetween(lon, lat, cell_lon, cell_lat)) {
-                    # Get the spatial interpolation weight. If this is below the interpolation threshold,
-                    # we discard the cell.
-                    weight <- getSpatialInterpolationWeight(lon, lat, cell_lon, cell_lat)
-
-***********************
-                    if (weight >= SPATIAL_INTERPOLATION_WEIGHT_LIMIT) {
-                    #if (weight >= 0) {
-
-                        # Now get the uncertainty. The list of candidate cells will be sorted by this
-                        uncertainty <- getSpatialInterpolationUncertainty(lon, lat, cell_lon, cell_lat)
-                        cell_count <- cell_count + 1
-
-                        lons[cell_count] <- cell_lon
-                        lats[cell_count] <- cell_lat
-                        weights[cell_count] <- weight
-                        uncertainties[cell_count] <- uncertainty
-                    }
-                }
-            }
-        }
-    }
 
     if (sum(!is.na(uncertainties)) == 0) {
         result <- vector(mode="numeric", length=0)
@@ -857,14 +813,14 @@ function getspatialinterpolationweight(source::Cell, dest::Cell, spatialacfs::Ar
         # If there are no directional ACF values, use the omnidirectional value
         # for the target cell only. If this doesn't exist, we have to return a zero
         # weight because we can't guess at whether or not the two cells' values are related
-        local omnidirectionalacfvalue::Float64 = spatialacfs[source.lon, source.lat, 5, distancebin]
+        local omnidirectionalacfvalue::Union{Missing, Float64} = spatialacfs[source.lon, source.lat, 5, distancebin]
         if !ismissing(omnidirectionalacfvalue)
             weight = omnidirectionalacfvalue
         end
     end
 
     # Anything below the weighting limit is given a weighting of zero
-    if weight < SPATIAL_INTERPOLATION_WEIGHT_LIMIT
+    if !ismissing(weight) && weight < SPATIAL_INTERPOLATION_WEIGHT_LIMIT
         weight = missing
     end
 
