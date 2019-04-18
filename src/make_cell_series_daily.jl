@@ -16,7 +16,7 @@ const LEAPMONTHSTARTS = [0, 31, 60, 91, 121, 152, 182, 213, 244, 274, 305, 335]
 const DAYSTARTS = range(1, step=1, length=365)
 
 # Calculate the conversion of leap year days to 365 'normal' year days
-# Each leap year day lasts 1 1/365 normal days 
+# Each leap year day lasts 1 1/365 normal days
 LEAPDAYSTARTS = Array{Float64}(undef, 365)
 
 for i in 1:365
@@ -52,17 +52,17 @@ function calcjdate(year::Int64, month::Int64, day::Int64)::Int64
 end
 
 # Calculate the day of the year for a given date
-function getdayindex(date, days)::Float64
+function getdayindex(date, days)::Int64
     return findall(days .<= date)[end]
 end
 
 # Calcaulte the nth day of the complete data set
 # Days are only calculated between the start and end years
 function getdateindex(year::Int64, month::Int64, day::Int64)::Int64
-    
-    local jdate::Float64 = calcjdate(year, month, day)    
-    local index::Float64 = -1
-    local dayindex::Float64 = 0
+
+    local jdate::Int64 = calcjdate(year, month, day)
+    local index::Int64 = -1
+    local dayindex::Int64 = 0
 
     if year >= STARTYEAR && year <= ENDYEAR
         if isleapyear(year)
@@ -70,7 +70,7 @@ function getdateindex(year::Int64, month::Int64, day::Int64)::Int64
         else
             dayindex = getdayindex(jdate, LEAPDAYSTARTS)
         end
-    
+
         index = ((year - STARTYEAR) * 365) + dayindex
     end
 
@@ -133,7 +133,7 @@ function run()
 
         local currentline::String = readline(inchan)
         update!(p, position(inchan))
-        
+
         while length(currentline) > 0
             local fields::Array{String, 1} = split(currentline, "\t")
 
@@ -151,16 +151,16 @@ function run()
 
             if dataset != currentdataset ||
                 cellindex != currentcell ||
-                dateindex != currentdate 
+                dateindex != currentdate
 
                 if currentdate != -1
-                    @inbounds overallcelltotals[currentcell[1], currentcell[2], currentdate] = 
+                    @inbounds overallcelltotals[currentcell[1], currentcell[2], currentdate] =
                         overallcelltotals[currentcell[1], currentcell[2], currentdate] + currenttotal / currentcount
 
-                    @inbounds overalluncertaintytotals[currentcell[1], currentcell[2], currentdate] = 
+                    @inbounds overalluncertaintytotals[currentcell[1], currentcell[2], currentdate] =
                         overalluncertaintytotals[currentcell[1], currentcell[2], currentdate] + currentuncertaintytotal / currentcount
 
-                    @inbounds overallcellcounts[currentcell[1], currentcell[2], currentdate] = 
+                    @inbounds overallcellcounts[currentcell[1], currentcell[2], currentdate] =
                         overallcellcounts[currentcell[1], currentcell[2], currentdate] + 1
                 end
 
@@ -189,13 +189,13 @@ function run()
         # The last dataset
         update!(p, position(inchan))
         if currentdate != -1
-            @inbounds overallcelltotals[currentcell[1], currentcell[2], currentdate] = 
+            @inbounds overallcelltotals[currentcell[1], currentcell[2], currentdate] =
                 overallcelltotals[currentcell[1], currentcell[2], currentdate] + currenttotal / currentcount
 
-            @inbounds overalluncertaintytotals[currentcell[1], currentcell[2], currentdate] = 
+            @inbounds overalluncertaintytotals[currentcell[1], currentcell[2], currentdate] =
                 overalluncertaintytotals[currentcell[1], currentcell[2], currentdate] + currentuncertaintytotal / currentcount
 
-            @inbounds overallcellcounts[currentcell[1], currentcell[2], currentdate] = 
+            @inbounds overallcellcounts[currentcell[1], currentcell[2], currentdate] =
                 overallcellcounts[currentcell[1], currentcell[2], currentdate] + 1
         end
 
@@ -224,7 +224,7 @@ function run()
     nclat.attrib["units"] = "degrees_north"
 
     local nctime = defVar(nc, "time", Float32, ("time",))
-    nctime.attrib["calendar"] = "noleap"
+    nctime.attrib["units"] = "year"
 
     local ncfco2 = defVar(nc, "fCO2", Float64, ("longitude", "latitude", "time"))
     ncfco2.attrib["_FillValue"] = -1e35
