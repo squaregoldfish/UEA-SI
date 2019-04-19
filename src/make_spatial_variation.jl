@@ -3,7 +3,7 @@ using Serialization
 using SharedArrays
 using ProgressMeter
 
-# I had a go at this, but @threads doesn't work
+# I had a go at parallelising this, but @threads doesn't work
 # because array updates aren't thread safe.
 # We'd have to make a proper @distributed/pmap
 # to make separate small arrays and combine them.
@@ -46,22 +46,26 @@ function run()
 				local currentvalue::Union{Missing, Float64} = fco2[lonloop, latloop, timeloop]
 				if !ismissing(currentvalue)
 
-	                # Search for other cells with values at the same time.
-	                # Note that we include values from a 7 timesteps either side too,
-	                # just to increase the amount of data we can use. It should also
-	                # temper the most optimistic change values we see.
-	                local compare::Array{Union{Missing, Float64}, 3} = fco2[:, :, timemin:timemax]
-	                local diffs::Array{Union{Missing, Float64}, 3} = similar(compare)
-	                @. diffs = abs(compare - currentvalue)
-	                for difflon in 1:lonsize
-	                	for difflat in 1:latsize
-	                		local celldiffs = diffs[difflon, difflat, :]
-                			variationtotal[lonloop, latloop, difflon, difflat] =
-                				variationtotal[lonloop, latloop, difflon, difflat] + sum(skipmissing(celldiffs))
-                			variationcount[lonloop, latloop, difflon, difflat] =
-                				variationcount[lonloop, latloop, difflon, difflat] + sum(@. count(!ismissing(celldiffs)))
-	                	end
-	                end
+					for timeoffset in -7:7
+						innertimeindex = timeloop + timeoffset
+						if innertimeindex > 0 && innertimeindex ≤ timesize
+							for innerlonloop::Int64 in 1:lonsize
+								for innerlatloop::Int64 in 1:latsize
+
+									if innerlonloop != lonloop || innerlatloop != latloop
+										if !ismissing(fco2[innerlonloop, innerlatloop, innertimeindex])
+											diff::Float64 = abs(currentvalue - fco2[innerlonloop, innerlatloop, innertimeindex])
+											variationtotal[lonloop, latloop, innerlonloop, innerlatloop] =
+											  variationtotal[lonloop, latloop, innerlonloop, innerlatloop] + diff
+
+											variationcount[lonloop, latloop, innerlonloop, innerlatloop] =
+											  variationcount[lonloop, latloop, innerlonloop, innerlatloop] + 1
+										end
+									end
+								end
+							end
+						end
+				  end
 				end
 			end
 		end
@@ -73,7 +77,6 @@ function run()
 	print("\033[1K\rCalculating means...")
 	local meanvar::Array{Float64, 4} = similar(variationtotal)
 	@inbounds meanvar = variationtotal ./ variationcount
-	@inbounds meanvar = replace(meanvar, NaN=>-1e35)
 
 	local out::IOStream = open(OUTFILE, "w")
 	serialize(out, meanvar)
