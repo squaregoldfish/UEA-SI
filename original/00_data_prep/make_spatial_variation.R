@@ -88,7 +88,6 @@ for (lon_loop1 in 1:LON_LENGTH) {
             for (lat_loop2 in 1:LAT_LENGTH) {
                 if (spatial_variations_count[lon_loop1, lat_loop1, lon_loop2, lat_loop2] > 0) {
                     pco2_spatial_variation[lon_loop1, lat_loop1, lon_loop2, lat_loop2] <- spatial_variations_total[lon_loop1, lat_loop1, lon_loop2, lat_loop2] / spatial_variations_count[lon_loop1, lat_loop1, lon_loop2, lat_loop2]
-cat(lon_loop1, lat_loop1, lon_loop2, lat_loop2,pco2_spatial_variation[lon_loop1, lat_loop1, lon_loop2, lat_loop2],"\n")
                 }
             }
         }
