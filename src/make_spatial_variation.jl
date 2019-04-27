@@ -15,6 +15,7 @@ const OUTFILE = "fco2_spatial_variation.jldata"
 
 function run()
 	print("Loading input data...")
+
 	local lons::Array{Union{Missing, Float32},1} = Dataset(INFILE)["longitude"][:]
 	local lats::Array{Union{Missing, Float32},1} = Dataset(INFILE)["latitude"][:]
 	local fco2::Array{Union{Missing, Float64}, 3} = Dataset(INFILE)["fCO2"][:,:,:]
@@ -82,7 +83,6 @@ function run()
 	serialize(out, meanvar)
 	close(out)
 
-	print("\n$(length(meanvar)) $(count(meanvar .< 0))")
 	print("\n")
 end
 
