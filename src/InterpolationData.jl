@@ -40,6 +40,8 @@ const SPATIAL_INTERPOLATION_WEIGHT_LIMIT = 0.367879
 # Global stuff
 #
 const Cell = NamedTuple{(:lon, :lat), Tuple{UInt16, UInt16}}
+const InterpolationCell = NamedTuple{(:lon, :lat, :weight, :uncertainty),
+    Tuple{UInt16, UInt16, Union{Missing, Float64}, Union{Missing, Float64}}}
 const INTERPOLATION_DATA_DIR = "interpolation_data"
 
 # These aren't fixed, but they must be set based on the data
@@ -149,18 +151,6 @@ function makeinterpolationdata(cellindex::Int64, lonsize::Int64, latsize::Int64,
     return cell
 end
 
-# Create a cell without generating the interpolation data
-function _makecell(cellindex::Int64, lonsize::Int64, latsize::Int64)::Cell
-    local lonindex::Int64 = floor(cellindex / latsize) + 1
-    local latindex::Int64 = mod(cellindex, latsize)
-    if latindex == 0
-        latindex = 72
-        lonindex -= 1
-    end
-
-    return (lon=lonindex, lat=latindex)
-end
-
 # Perform the main interpolation for a cell
 function interpolatecell(cell::Cell, interpolationstep::UInt8, temporalacf::Array{Float64, 1},
     spatialacfs::Array{Union{Missing, Float64}, 4}, spatialvariation::Array{Union{Missing, Float64}, 4}, seamask::Array{UInt8, 2})
@@ -228,7 +218,7 @@ function interpolate!(data::InterpolationCellData, step::UInt8, temporalacf::Arr
         local continuefit::Bool = true
 
         local spatialinterpolationcount::UInt8 = 0
-        local spatialinterpolationcells::Array{Cell, 1} = Array{Cell, 1}()
+        local spatialinterpolationcells::Vector{InterpolationCell} = Vector{InterpolationCell}()
 
         # Variables for processing (empty placeholders)
         local currentseries::SeriesData = SeriesData()
@@ -548,13 +538,13 @@ function mergevalues!(original::Array{Union{Missing, Float64}, 1}, incoming::Arr
 end
 
 # Perform one step of spatial interpolation
-function dospatialinterpolation!(data::InterpolationCellData, interpolationcells::Array{Cell, 1},
+function dospatialinterpolation!(data::InterpolationCellData, interpolationcells::Vector{InterpolationCell},
     interpolationcount::UInt8, spatialacfs::Array{Union{Missing, Float64}, 4},
     spatialvariation::Array{Union{Missing, Float64}, 4}, seamask::Array{UInt8, 2})
 
     # Build the list of interpolation cells if it hasn't been done yet
     if length(interpolationcells) == 0
-        interpolationcandidates = calculateinterpolationcells(data.cell, MAX_SPATIAL_INTERPOLATION_STEPS)
+        interpolationcandidates::Vector{Cell} = calculateinterpolationcells(data.cell, MAX_SPATIAL_INTERPOLATION_STEPS)
         append!(interpolationcells, filterandsortinterpolationcells(data.cell,
             interpolationcandidates, data.paraminputweights, data.paraminputuncertainties,
             spatialacfs, spatialvariation, seamask))
@@ -650,7 +640,7 @@ end
 =#
 
 # Determine candidate cells for spatial interpolation of a given cell
-function calculateinterpolationcells(cell::Cell, maxstep::Int64)::Array{Cell, 1}
+function calculateinterpolationcells(cell::Cell, maxstep::Int64)::Vector{Cell}
 
     # Work out how many interpolation cells there will be.
     # Each step means (8 * step) cells are added to the list.
@@ -687,14 +677,14 @@ end
 
 # Filter a set of interpolation cell candidates to remove unusable cells and sort them by
 # lowest uncertainty/highest weight
-function filterandsortinterpolationcells(cell::Cell, interpolationcandidates::Array{Cell, 1},
+function filterandsortinterpolationcells(cell::Cell, interpolationcandidates::Vector{Cell},
     weights::Array{Union{Missing, Float64}, 1}, uncertainties::Array{Union{Missing, Float64}, 1},
-    spatialacfs::Array{Union{Missing, Float64}, 4}, spatialvariation::Array{Union{Missing, Float64}, 4}, seamask::Array{UInt8, 2})
+    spatialacfs::Array{Union{Missing, Float64}, 4}, spatialvariation::Array{Union{Missing, Float64}, 4},
+    seamask::Array{UInt8, 2})::Vector{InterpolationCell}
 
     # The output of this is a table of cell, weight, uncertainty.
     # Sorted by uncertainty, distance between cells, weight, cell.lon, cell.lat
-    local interpolationcells::Array{Tuple{Cell, Union{Float64, Missing}, Union{Float64, Missing}}, 1} =
-        Array{Tuple{Cell, Union{Float64, Missing}, Union{Float64, Missing}}, 1}()
+    local interpolationcells::Vector{InterpolationCell} = Vector{InterpolationCell}()
 
     local cellcount::Int16 = 0
 
@@ -709,15 +699,13 @@ function filterandsortinterpolationcells(cell::Cell, interpolationcandidates::Ar
 
                     # Now get the uncertainty. The list of candidate cells will be sorted by this
                     local uncertainty::Union{Float64, Missing} = getspatialinterpolationuncertainty(cell, candidate, spatialvariation)
-                    push!(interpolationcells, (candidate, weight, uncertainty))
+                    push!(interpolationcells, _makeinterpolationcell(candidate, weight, uncertainty))
                 end
             end
         end
     end
 
-    print(interpolationcells)
-    exit()
-
+    interpolationcells
 end
 
 
@@ -1314,6 +1302,23 @@ function _getcellradians(cell::Cell)::Tuple{Float64, Float64}
     local lon::Float64 = (cell.lon * GRID_SIZE - GRID_SIZE / 2) * π/180
     local lat::Float64 = (cell.lat * GRID_SIZE - 90 - GRID_SIZE / 2) * π/180
     (lon, lat)
+end
+
+# Create a cell without generating the interpolation data
+function _makecell(cellindex::Int64, lonsize::Int64, latsize::Int64)::Cell
+    local lonindex::Int64 = floor(cellindex / latsize) + 1
+    local latindex::Int64 = mod(cellindex, latsize)
+    if latindex == 0
+        latindex = 72
+        lonindex -= 1
+    end
+
+    return (lon=lonindex, lat=latindex)
+end
+
+# Create an InterpolationCell
+function _makeinterpolationcell(cell::Cell, weight::Union{Missing, Float64}, uncertainty::Union{Missing, Float64})::InterpolationCell
+    (lon=cell.lon, lat=cell.lat, weight=weight, uncertainty=uncertainty)
 end
 
 end #module
