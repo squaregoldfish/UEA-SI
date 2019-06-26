@@ -12,4 +12,4 @@ fi
 
 echo "Running..."
 #julia -p 8 interpolation.jl
-julia interpolation.jl
+julia --project=.. interpolation.jl
