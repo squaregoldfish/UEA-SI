@@ -556,25 +556,18 @@ function dospatialinterpolation!(data::InterpolationCellData, interpolationcells
     # Only interpolate if there are interpolation cells
     if length(interpolationcells) > 0
 
-        # 2D arrays of length * interpolation count for measurements, weights and uncertainties
-        # Populate from interpolation cells
-        # Combine with target cell
-        # Set as data.paraminput*
-
-        local interpolatedmeasurements::Array{Union{Missing, Float64}, 2} = Array{Union{Missing, Float64}}(missing, length(data.originalinputseries), interpolationcount)
-        local interpolatedweights::Array{Union{Missing, Float64}, 2} = Array{Union{Missing, Float64}}(missing, length(data.originalinputseries), interpolationcount)
-        local interpolateduncertainties::Array{Union{Missing, Float64}, 2} = Array{Union{Missing, Float64}}(missing, length(data.originalinputseries), interpolationcount)
-
-        local currentcell::UInt16 = 0
+        local interpolatedmeasurements::Array{Union{Missing, Float64}, 2} = Array{Union{Missing, Float64}}(missing, interpolationcount, length(data.originalinputseries))
+        local interpolatedweights::Array{Union{Missing, Float64}, 2} = Array{Union{Missing, Float64}}(missing, interpolationcount, length(data.originalinputseries))
+        local interpolateduncertainties::Array{Union{Missing, Float64}, 2} = Array{Union{Missing, Float64}}(missing, interpolationcount, length(data.originalinputseries))
 
         # Interpolate the specified number of cells
         for i in 1:interpolationcount
             local interpcell::InterpolationCell = interpolationcells[i]
             @info "Interpolating to $(data.cell.lon), $(data.cell.lat) from $(interpcell.lon), $(interpcell.lat)"
             interpdata::InterpolationCellData = _loadinterpolationdata(interpcell)
-            interpolatedmeasurements[,i] = interpdata.originalinputseries
-            interpolatedweights[,i] = interpdata.originalinputweights
-            interpolateduncertainties[,i] = interpdata.originalinputuncertainties
+            interpolatedmeasurements[i,:] = interpdata.originalinputseries
+            interpolatedweights[i,:] = interpdata.originalinputweights
+            interpolateduncertainties[i,:] = interpdata.originalinputuncertainties
         end
 
         # Loop through the time steps combining values from the original input
@@ -585,118 +578,38 @@ function dospatialinterpolation!(data::InterpolationCellData, interpolationcells
             local valuecount::Int16 = 0
 
             # Measurements
-            local measurementtotal::Float64 = 0
+            local weightedmeasurementtotal::Float64 = 0
             local weighttotal::Float64 = 0
             local uncertaintysquaretotal::Float64 = 0
 
             if !ismissing(data.originalinputseries[i])
                 valuecount += 1
-
-                measurementtotal += data.originalinputseries[i]
+                weightedmeasurementtotal += data.originalinputseries[i] * data.originalinputweights[i]
                 weighttotal += data.originalinputweights[i]
                 uncertaintysquaretotal += data.originalinputuncertainties[i]^2
             end
 
             for j in 1:interpolationcount
-                if !ismissing(interpolatedmeasurements[i, j])
+                if !ismissing(interpolatedmeasurements[j, i])
                     valuecount += 1
-
-                    measurementtotal += interpolatedmeasurements[i, j]
-                    weighttotal += interpolatedweights[i, j]
-                    uncertaintysquaretotal += interpolateduncertainties[i, j]^2
+                    weightedmeasurementtotal += interpolatedmeasurements[j, i] * interpolatedweights[j, i]
+                    weighttotal += interpolatedweights[j, i]
+                    uncertaintysquaretotal += interpolateduncertainties[j, i]^2
                 end
             end
 
             if valuecount == 0
                 data.paraminputseries[i] = missing
                 data.paraminputweights[i] = missing
-                data.paraminputuncertainties = missing
-
-
+                data.paraminputuncertainties[i] = missing
+            else
+                data.paraminputseries[i] = weightedmeasurementtotal / weighttotal
+                data.paraminputweights[i] = weighttotal / valuecount
+                data.paraminputuncertainties[i] = √(uncertaintysquaretotal / valuecount)
+            end
         end
     end
-
-    exit()
 end
-
-#=
-
-    if (length(spatial_interpolation_cells) == 0) {
-
-        # There are no interpolation candidates. Return the input data
-        interpolated_measurements <<- measurements
-        interpolated_weights <<- weights
-        interpolated_uncertainties <<- uncertainties
-    } else {
-
-        # Prepare data structures to hold the interpolated data. They will all be combined to
-        # work out the final interpolated values
-        interpolation_measurements <- vector(mode="numeric", length=(nrow(spatial_interpolation_cells) * length(measurements)))
-        interpolation_measurements[interpolation_measurements == 0] <- NA
-        dim(interpolation_measurements) <- c(nrow(spatial_interpolation_cells), length(measurements))
-
-        interpolation_weights <- interpolation_measurements
-        interpolation_uncertainties <- interpolation_measurements
-
-
-        # Retrieve the data for each interpolation cell
-        current_cell <- 0
-        for (i in 1:cell_count) {
-            interp_lon <- spatial_interpolation_cells[i, 1]
-            interp_lat <- spatial_interpolation_cells[i, 2]
-            interp_weight <- spatial_interpolation_cells[i, 3]
-            interp_uncertainty <- spatial_interpolation_cells[i, 4]
-
-            cat("INTERPOLATING TO",lon,lat,"from",interp_lon,interp_lat,"\n")
-
-            # The measurements are easiest - they simply get loaded
-            cell_measurements <- loadCellMeasurements(indir, interp_lon, interp_lat)
-
-            # All measurements have a weight assigned to them already. They must be further weighted by the
-            # distance over which they are being interpolated according to the spatial autocorrelation.
-            cell_weights <- loadCellWeights(indir, interp_lon, interp_lat)
-
-            current_cell <- current_cell + 1
-            cell_weights <- cell_weights * interp_weight
-
-            # All measurements have an uncertainty associated with them already. The uncertainty
-            # must be increased as the values are interpolated.
-            cell_uncertainties <- loadCellUncertainties(indir, interp_lon, interp_lat)
-
-            cell_uncertainties <- sqrt(cell_uncertainties^2 + interp_uncertainty^2)
-
-            # Add the interpolated cell's details to the data structure
-            for (j in 1:length(measurements)) {
-                interpolation_measurements[current_cell,j] <- cell_measurements[j]
-                interpolation_weights[current_cell,j] <- cell_weights[j]
-                interpolation_uncertainties[current_cell,j] <- cell_uncertainties[j]
-            }
-        }
-
-        # Now combine all the interpolated cells with the original measurements to make a single time series
-        output_measurements <- vector(mode="numeric", length=length(measurements))
-        output_measurements[output_measurements == 0] <- NA
-
-        output_weights <- output_measurements
-        output_uncertainties <- output_measurements
-
-        for (i in 1:length(measurements)) {
-
-            # Calculate the weighted mean measurement and mean uncertainty from all interpolated cells
-            weighted_mean <- sum(interpolation_measurements[,i] * interpolation_weights[,i],na.rm=T) / sum(interpolation_weights[,i],na.rm=T)
-            mean_weight <- mean(interpolation_weights[,i],na.rm=T)
-            mean_uncertainty <- sqrt(sqrt(sum(interpolation_uncertainties[,i]**2,na.rm=T)) / sum(!is.na(interpolation_uncertainties[,i]))^2 + 2.5^2)
-            output_measurements[i] <- weighted_mean
-            output_weights[i] <- mean_weight
-            output_uncertainties[i] <- mean_uncertainty
-        }
-
-        # Push the interpolated values up to the calling function
-        interpolated_measurements <<- output_measurements
-        interpolated_weights <<- output_weights
-        interpolated_uncertainties <<- output_uncertainties
-    }
-=#
 
 # Determine candidate cells for spatial interpolation of a given cell
 function calculateinterpolationcells(cell::Cell, maxstep::Int64)::Vector{Cell}
