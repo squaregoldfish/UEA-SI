@@ -11,4 +11,5 @@ then
 fi
 
 echo "Running..."
-julia -p 8 interpolation.jl
+#julia -p 8 interpolation.jl
+julia interpolation.jl

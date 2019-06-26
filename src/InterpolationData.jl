@@ -145,7 +145,8 @@ function makeinterpolationdata(cellindex::Int64, lonsize::Int64, latsize::Int64,
 
     local cell::Cell = _makecell(cellindex, lonsize, latsize)
     local land::Bool = seamask[cell.lon, cell.lat] == 0
-    local interpolationdata::InterpolationCellData = InterpolationCellData(cell, timesize, land, fco2[cell.lon, cell.lat, :], uncertainty[cell.lon, cell.lat, :])
+    local interpolationdata::InterpolationCellData =
+        InterpolationCellData(cell, timesize, land, fco2[cell.lon, cell.lat, :], uncertainty[cell.lon, cell.lat, :])
     _saveinterpolationdata(interpolationdata)
 
     return cell
@@ -551,16 +552,74 @@ function dospatialinterpolation!(data::InterpolationCellData, interpolationcells
     end
 
     @info "Performing spatial interpolation for cell $(data.cell.lon), $(data.cell.lat), cell $interpolationcount of $(length(interpolationcells))"
+
+    # Only interpolate if there are interpolation cells
+    if length(interpolationcells) > 0
+
+        # 2D arrays of length * interpolation count for measurements, weights and uncertainties
+        # Populate from interpolation cells
+        # Combine with target cell
+        # Set as data.paraminput*
+
+        local interpolatedmeasurements::Array{Union{Missing, Float64}, 2} = Array{Union{Missing, Float64}}(missing, length(data.originalinputseries), interpolationcount)
+        local interpolatedweights::Array{Union{Missing, Float64}, 2} = Array{Union{Missing, Float64}}(missing, length(data.originalinputseries), interpolationcount)
+        local interpolateduncertainties::Array{Union{Missing, Float64}, 2} = Array{Union{Missing, Float64}}(missing, length(data.originalinputseries), interpolationcount)
+
+        local currentcell::UInt16 = 0
+
+        # Interpolate the specified number of cells
+        for i in 1:interpolationcount
+            local interpcell::InterpolationCell = interpolationcells[i]
+            @info "Interpolating to $(data.cell.lon), $(data.cell.lat) from $(interpcell.lon), $(interpcell.lat)"
+            interpdata::InterpolationCellData = _loadinterpolationdata(interpcell)
+            interpolatedmeasurements[,i] = interpdata.originalinputseries
+            interpolatedweights[,i] = interpdata.originalinputweights
+            interpolateduncertainties[,i] = interpdata.originalinputuncertainties
+        end
+
+        # Loop through the time steps combining values from the original input
+        # and the interpolated cells
+        for i in 1:length(data.originalinputseries)
+
+            # Count of values for the time step
+            local valuecount::Int16 = 0
+
+            # Measurements
+            local measurementtotal::Float64 = 0
+            local weighttotal::Float64 = 0
+            local uncertaintysquaretotal::Float64 = 0
+
+            if !ismissing(data.originalinputseries[i])
+                valuecount += 1
+
+                measurementtotal += data.originalinputseries[i]
+                weighttotal += data.originalinputweights[i]
+                uncertaintysquaretotal += data.originalinputuncertainties[i]^2
+            end
+
+            for j in 1:interpolationcount
+                if !ismissing(interpolatedmeasurements[i, j])
+                    valuecount += 1
+
+                    measurementtotal += interpolatedmeasurements[i, j]
+                    weighttotal += interpolatedweights[i, j]
+                    uncertaintysquaretotal += interpolateduncertainties[i, j]^2
+                end
+            end
+
+            if valuecount == 0
+                data.paraminputseries[i] = missing
+                data.paraminputweights[i] = missing
+                data.paraminputuncertainties = missing
+
+
+        end
+    end
+
     exit()
 end
 
 #=
-    if (is.null(spatial_interpolation_cells)) {
-        cat("Getting spatial interpolation cells\n")
-
-        interpolation_candidates <- calculateInterpolationCells(lon, lat, 10)
-        spatial_interpolation_cells <<- filterAndSortInterpolationCells(lon, lat, interpolation_candidates, weights, uncertainties)
-    }
 
     if (length(spatial_interpolation_cells) == 0) {
 
@@ -705,34 +764,9 @@ function filterandsortinterpolationcells(cell::Cell, interpolationcandidates::Ve
         end
     end
 
+    sort!(interpolationcells, by = x -> (x.uncertainty, x.weight))
     interpolationcells
 end
-
-
-#=
-
-
-    if (sum(!is.na(uncertainties)) == 0) {
-        result <- vector(mode="numeric", length=0)
-    } else {
-
-        sorted_indices <- order(uncertainties, -weights, lons, lats)
-
-        result <- vector(mode="numeric", length=(sum(!is.na(lons)) * 4))
-        dim(result) <- c(sum(!is.na(lons)), 4)
-
-        result[,1] <- lons[sorted_indices][!is.na(lons)]
-        result[,2] <- lats[sorted_indices][!is.na(lons)]
-        result[,3] <- weights[sorted_indices][!is.na(lons)]
-        result[,4] <- uncertainties[sorted_indices][!is.na(lons)]
-    }
-
-    return (result)
-}
-
-
-
-=#
 
 # Retrieve the uncertainty for the interpolation between two cells
 function getspatialinterpolationuncertainty(source::Cell, dest::Cell,
@@ -1282,6 +1316,11 @@ function _saveinterpolationdata(data::InterpolationCellData)
     local out::IOStream = open(_getdatafilename(data), "w")
     serialize(out, data)
     close(out)
+end
+
+# Load an InterpolationCellData object
+function _loadinterpolationdata(cell::InterpolationCell)::InterpolationCellData
+    _loadinterpolationdata((lon=cell.lon, lat=cell.lat))
 end
 
 # Load an InterpolationCellData object
