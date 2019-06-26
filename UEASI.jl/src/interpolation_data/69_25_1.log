@@ -1,0 +1,30 @@
+┌ Debug: Removed 0 outliers
+└ @ Main.InterpolationData /Users/zuj007/Documents/pCO2/interpolation_yaffel/UEA-SI/src/InterpolationData.jl:431
+┌ Debug: Series standard deviation = 22.829941076758992
+└ @ Main.InterpolationData /Users/zuj007/Documents/pCO2/interpolation_yaffel/UEA-SI/src/InterpolationData.jl:441
+┌ Debug: Measurements span 10933 days
+└ @ Main.InterpolationData /Users/zuj007/Documents/pCO2/interpolation_yaffel/UEA-SI/src/InterpolationData.jl:450
+┌ Debug: 7 populated months
+└ @ Main.InterpolationData /Users/zuj007/Documents/pCO2/interpolation_yaffel/UEA-SI/src/InterpolationData.jl:471
+┌ Info: Should have at least 8 populated months
+└ @ Main.InterpolationData /Users/zuj007/Documents/pCO2/interpolation_yaffel/UEA-SI/src/InterpolationData.jl:473
+┌ Info: PREFIT CHECKS FAILED
+└ @ Main.InterpolationData /Users/zuj007/Documents/pCO2/interpolation_yaffel/UEA-SI/src/InterpolationData.jl:351
+┌ Debug: Removed 0 outliers
+└ @ Main.InterpolationData /Users/zuj007/Documents/pCO2/interpolation_yaffel/UEA-SI/src/InterpolationData.jl:431
+┌ Debug: Series standard deviation = 23.729698324526872
+└ @ Main.InterpolationData /Users/zuj007/Documents/pCO2/interpolation_yaffel/UEA-SI/src/InterpolationData.jl:441
+┌ Debug: Measurements span 10947 days
+└ @ Main.InterpolationData /Users/zuj007/Documents/pCO2/interpolation_yaffel/UEA-SI/src/InterpolationData.jl:450
+┌ Debug: 7 populated months
+└ @ Main.InterpolationData /Users/zuj007/Documents/pCO2/interpolation_yaffel/UEA-SI/src/InterpolationData.jl:471
+┌ Info: Should have at least 8 populated months
+└ @ Main.InterpolationData /Users/zuj007/Documents/pCO2/interpolation_yaffel/UEA-SI/src/InterpolationData.jl:473
+┌ Info: PREFIT CHECKS FAILED
+└ @ Main.InterpolationData /Users/zuj007/Documents/pCO2/interpolation_yaffel/UEA-SI/src/InterpolationData.jl:351
+┌ Info: FAILED
+└ @ Main.InterpolationData /Users/zuj007/Documents/pCO2/interpolation_yaffel/UEA-SI/src/InterpolationData.jl:327
+┌ Info: Performing spatial interpolation for cell 69, 25, cell 1 of 36
+└ @ Main.InterpolationData /Users/zuj007/Documents/pCO2/interpolation_yaffel/UEA-SI/src/InterpolationData.jl:554
+┌ Info: Interpolating to 69, 25 from 66, 25
+└ @ Main.InterpolationData /Users/zuj007/Documents/pCO2/interpolation_yaffel/UEA-SI/src/InterpolationData.jl:568

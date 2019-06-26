@@ -1,0 +1,14 @@
+name = "UEASI.jl"
+uuid = "1a9f68e8-9849-11e9-3bcf-2b93def2cc93"
+authors = ["Steve Jones <steve@squaregoldfish.co.uk>"]
+version = "0.1.0"
+
+[deps]
+DelimitedFiles = "8bb1440f-4735-579b-a4ab-409b98df4dab"
+Distributed = "8ba89e20-285c-5b6f-9357-94700520ee1b"
+Logging = "56ddb016-857b-54e1-b83d-db4d58db5568"
+LsqFit = "2fda8390-95c7-5789-9bda-21331edee243"
+NCDatasets = "85f8d34a-cbdd-5861-8df4-14fed0d494ab"
+Serialization = "9e88b42a-f829-5b0c-bbe9-9e923198166b"
+SharedArrays = "1a1011a3-84de-559e-8e89-a11a2f7dc383"
+Statistics = "10745b16-79ce-11e8-11f9-7d13ad32a3b2"
