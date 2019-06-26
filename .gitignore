@@ -8,4 +8,5 @@ src/interpolation_data*
 Icon*
 *.cdf
 pco2_spatial_variation.R
+*.log
 
