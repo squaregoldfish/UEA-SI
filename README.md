@@ -1,2 +1,2 @@
 # UEA-SI
-Surface ocean pCO2 interpolation
+Surface ocean pCO₂ interpolation
