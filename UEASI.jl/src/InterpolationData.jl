@@ -240,10 +240,6 @@ function interpolate!(data::InterpolationCellData, step::UInt8, temporalacf::Arr
                 # Need to do spatial interpolation
                 dospatialinterpolation!(data, spatialinterpolationcells, spatialinterpolationcount,
                     spatialacfs, spatialvariation, seamask)
-
-                println("Must do spatial interpolation.")
-                # Don't forget to use data.paraminputseries
-                exit()
             end
 
             if continuefit
@@ -1195,7 +1191,11 @@ function checkcurvefit(series::Array{Union{Missing, Float64}, 1}, fittedcurve::A
     curveok
 end
 
-
+function significantdifference(series1::SeriesData, series2::SeriesData)::Bool
+    local corr::Float64 = Statistics.cor(series1.curve, series2.curve)^2
+    @debug "Curve difference level = $corr"
+    corr < 0.99
+end
 
 ###############################################################
 #
