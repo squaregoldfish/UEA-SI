@@ -244,11 +244,9 @@ function interpolate!(data::InterpolationCellData, step::UInt8, temporalacf::Vec
 
             if continuefit
                 if attemptcurvefit
-                    attemptfit!(currentseries, temporalacf)
+                    fitfound = attemptfit!(currentseries, temporalacf)
 
-                    if length(currentseries.curve) > 0
-                        fitfound = true
-
+                    if fitfound
                         if length(storedseries.curve) == 0
                             # No previous successful fit - store this fit
                             # Store the current fit for later comparison
@@ -262,8 +260,6 @@ function interpolate!(data::InterpolationCellData, step::UInt8, temporalacf::Vec
                                 continuefit = false
                             elseif spatialinterpolationcount > 0 && spatialinterpolationcount == length(spatialinterpolationcells)
                                 continuefit = false
-                            else
-                                spatialinterpolationcount += 1
                             end
                         else
                             # There is a previous fit
@@ -277,15 +273,12 @@ function interpolate!(data::InterpolationCellData, step::UInt8, temporalacf::Vec
                                         continuefit = false
                                     elseif spatialinterpolationcount > 0 && spatialinterpolationcount == length(spatialinterpolationcells)
                                         continuefit = false
-                                    else
-                                        spatialinterpolationcount += 1
                                     end
-                                else
-                                    spatialinterpolationcount += 1
                                 end
                             else
                                 # The spatial interpolation made no difference. We can stop
                                 # with the previous fit
+                                @debug "Curve difference not significant - reverting"
                                 continuefit = false
                             end
                         end
@@ -297,16 +290,16 @@ function interpolate!(data::InterpolationCellData, step::UInt8, temporalacf::Vec
                     # measurements in play. Unless, of course, there are no more candidate cells
                     # for interpolation
                     if spatialinterpolationcount > 0
-                        if length(spatial_interpolation_cells) == 0
+                        if length(spatialinterpolationcells) == 0
                             continuefit = false
                         elseif spatialinterpolationcount > 0 && spatialinterpolationcount == length(spatialinterpolationcells)
                             continuefit = false
-                        else
-                            spatialinterpolationcount += 1
                         end
-                    else
-                        spatialinterpolationcount += 1
                     end
+                end
+
+                if continuefit
+                    spatialinterpolationcount += 1
                 end
             end
 
@@ -317,10 +310,10 @@ function interpolate!(data::InterpolationCellData, step::UInt8, temporalacf::Vec
             data.fitparams = currentseries.curveparams
 
             if fitfound
-                @info "SUCCESS"
+                @info "FIT SUCCESS"
                 data.finished = true
             else
-                @info "FAILED"
+                @info "FIT FAILED"
             end
 
             _saveinterpolationdata(data)
@@ -329,24 +322,31 @@ function interpolate!(data::InterpolationCellData, step::UInt8, temporalacf::Vec
 end
 
 # Try to fit a curve to the supplied time series
-function attemptfit!(series::SeriesData, temporalacf::Vector{Float64})
+function attemptfit!(series::SeriesData, temporalacf::Vector{Float64})::Bool
+
+    local fitsuccess::Bool = false
 
     # Attempt a curve fit
-    fitcurve!(series)
+    fitsuccess = fitcurve!(series)
 
     if length(series.curveparams) == 0
         dotemporalinterpolation!(series, temporalacf)
-        fitcurve!(series)
+        fitsuccess = fitcurve!(series)
     end
+
+    fitsuccess
 end
 
 # Fit a harmonic curve to a time series
-function fitcurve!(series::SeriesData)
+function fitcurve!(series::SeriesData)::Bool
+
+    local fitsuccess::Bool = false
+
     local fitseries::Vector{Union{Missing, Float64}} = removeoutliers(series.measurements)
+
     if !doprefitcheck(fitseries)
         @info "PREFIT CHECKS FAILED"
     else
-        local fitsuccess::Bool = false
         local harmoniccount::UInt8 = 4
 
         while !fitsuccess && harmoniccount > 0
@@ -405,6 +405,8 @@ function fitcurve!(series::SeriesData)
             end
         end
     end
+
+    fitsuccess
 end
 
 # Remove outliers from a time series. The outlier limit
@@ -441,12 +443,19 @@ function doprefitcheck(series::Vector{Union{Missing, Float64}})::Bool
     end
 
     # Minimum time coverage
-    local missingdays::Vector{Int64} = findall(!ismissing, series)
-    local dayspan::Int64 = missingdays[end] - missingdays[1]
-    @debug "Measurements span $dayspan days"
-    if dayspan < MIN_TIME_SPAN
-        @info "Measurements must span at least $MIN_TIME_SPAN days"
+    local measurementdays::Vector{Int64} = findall(!ismissing, series)
+    if length(measurementdays) == 0
+        @info "No measurements"
         ok = false
+    end
+
+    if ok
+        local dayspan::Int64 = measurementdays[end] - measurementdays[1]
+        @debug "Measurements span $dayspan days"
+        if dayspan < MIN_TIME_SPAN
+            @info "Measurements must span at least $MIN_TIME_SPAN days"
+            ok = false
+        end
     end
 
     # Populated months

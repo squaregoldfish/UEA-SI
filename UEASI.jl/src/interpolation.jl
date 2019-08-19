@@ -107,8 +107,8 @@ function run()
 	#	println("Finished cells: $(sum(finishedarray .== true))")
 	#end
 
-	testcell::Cell = (lon=69, lat=25)
-	interpolatecell(testcell, convert(UInt8, 1), temporalacf, spatialacfs, spatialvariation, seamask)
+	local testcell::Cell = (lon=113, lat=18)
+	local finished::Bool = interpolatecell(testcell, convert(UInt8, 1), temporalacf, spatialacfs, spatialvariation, seamask)
 
 #	println("Final finished count: $lastfinishedcount")
 
