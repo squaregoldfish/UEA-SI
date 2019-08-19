@@ -135,7 +135,7 @@ function run()
         update!(p, position(inchan))
 
         while length(currentline) > 0
-            local fields::Array{String, 1} = split(currentline, "\t")
+            local fields::Vector{String} = split(currentline, "\t")
 
             local dataset::String = fields[1]
             local year::Int64 = parse(Int64, fields[5])

@@ -64,7 +64,7 @@ function run()
 	local spatialacfs::Array{Union{Missing, Float64}, 4} = Dataset(SPATIAL_ACFS_FILE)["mean_directional_acfs"][:,:,:,:]
 	next!(loadprogress)
 
-	local temporalacf::Array{Float64, 1} = readdlm(TEMPORAL_ACFS_FILE, ',', Float64, '\n')[:,2]
+	local temporalacf::Vector{Float64} = readdlm(TEMPORAL_ACFS_FILE, ',', Float64, '\n')[:,2]
 
 	# Initialise InterpolationData module, incl. loading bathymetry
 	InterpolationData.init(length(lons), length(lats))
@@ -74,7 +74,7 @@ function run()
 	######################################
 	## SET UP DATA STRUCTURES
 
-	local cells::Array{Cell, 1} = []
+	local cells::Vector{Cell} = []
 	if __INIT_DATA__
 		cells = makecells(length(lons), length(lats), length(times), seamask, fco2, uncertainty)
 	else
@@ -96,7 +96,7 @@ function run()
 	# NOW THE PROCESSING
 	#
 	# Repeatedly process all cells until the number of finished cells stablises
-#	local finishedarray::Array{Bool, 1} = falses(length(cells))
+#	local finishedarray::Vector{Bool} = falses(length(cells))
 #	local lastfinishedcount::Int64 = 0
 #	local interpolationstep::Int8 = 0
 

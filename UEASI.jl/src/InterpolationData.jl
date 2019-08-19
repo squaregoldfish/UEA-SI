@@ -80,22 +80,22 @@ mutable struct InterpolationCellData
     cell::Cell
     land::Bool
     finished::Bool
-    fitparams::Array{Float64, 1}
-    originalinputseries::Array{Union{Missing, Float64}, 1}
-    originalinputuncertainties::Array{Union{Missing, Float64}, 1}
-    originalinputweights::Array{Union{Missing, Float64}, 1}
-    paraminputseries::Array{Union{Missing, Float64}, 1}
-    paraminputuncertainties::Array{Union{Missing, Float64}, 1}
-    paraminputweights::Array{Union{Missing, Float64}, 1}
+    fitparams::Vector{Float64}
+    originalinputseries::Vector{Union{Missing, Float64}}
+    originalinputuncertainties::Vector{Union{Missing, Float64}}
+    originalinputweights::Vector{Union{Missing, Float64}}
+    paraminputseries::Vector{Union{Missing, Float64}}
+    paraminputuncertainties::Vector{Union{Missing, Float64}}
+    paraminputweights::Vector{Union{Missing, Float64}}
 
-    function InterpolationCellData(cell::Cell, timesize::Int64, island::Bool, fco2::Array{Union{Missing, Float64}, 1},
-        uncertainty::Array{Union{Missing, Float64}, 1})
+    function InterpolationCellData(cell::Cell, timesize::Int64, island::Bool, fco2::Vector{Union{Missing, Float64}},
+        uncertainty::Vector{Union{Missing, Float64}})
 
         newobj::InterpolationCellData = new(cell)
 
         newobj.land = island
         newobj.finished = island # If the cell is on land, we've already finished
-        newobj.fitparams = Array{Float64, 1}(undef, 5)
+        newobj.fitparams = Vector{Float64}(undef, 5)
 
         newobj.originalinputseries = fco2
         newobj.originalinputuncertainties = uncertainty
@@ -112,8 +112,8 @@ end #InterpolationCellData
 
 # Create the cell objects without initialising the corresponding data structures
 # Useful during development
-function makecells(lonsize::Int64, latsize::Int64)::Array{Cell, 1}
-    local cells::Array{Cell, 1} = Array{Cell, 1}(undef, lonsize * latsize)
+function makecells(lonsize::Int64, latsize::Int64)::Vector{Cell}
+    local cells::Vector{Cell} = Vector{Cell}(undef, lonsize * latsize)
     for i in 1:(lonsize * latsize)
         cells[i] = _makecell(i, lonsize, latsize)
     end
@@ -123,7 +123,7 @@ end
 
 # Create the array of base data structures for the interpolations
 function makecells(lonsize::Int64, latsize::Int64, timesize::Int64, seamask::Array{UInt8, 2},
-    fco2::Array{Union{Missing, Float64}, 3}, uncertainty::Array{Union{Missing, Float64}, 3})::Array{Cell, 1}
+    fco2::Array{Union{Missing, Float64}, 3}, uncertainty::Array{Union{Missing, Float64}, 3})::Vector{Cell}
 
     if isdir(INTERPOLATION_DATA_DIR)
         rm(INTERPOLATION_DATA_DIR, recursive=true)
@@ -131,7 +131,7 @@ function makecells(lonsize::Int64, latsize::Int64, timesize::Int64, seamask::Arr
 
     mkdir(INTERPOLATION_DATA_DIR)
 
-    local cells::Array{Cell, 1} = Array{Cell, 1}(undef, lonsize * latsize)
+    local cells::Vector{Cell} = Vector{Cell}(undef, lonsize * latsize)
     @showprogress 1 "Initialising working data..." for i in 1:(lonsize * latsize)
         cells[i] = makeinterpolationdata(i, lonsize, latsize, seamask, timesize, fco2, uncertainty)
     end
@@ -153,7 +153,7 @@ function makeinterpolationdata(cellindex::Int64, lonsize::Int64, latsize::Int64,
 end
 
 # Perform the main interpolation for a cell
-function interpolatecell(cell::Cell, interpolationstep::UInt8, temporalacf::Array{Float64, 1},
+function interpolatecell(cell::Cell, interpolationstep::UInt8, temporalacf::Vector{Float64},
     spatialacfs::Array{Union{Missing, Float64}, 4}, spatialvariation::Array{Union{Missing, Float64}, 4}, seamask::Array{UInt8, 2})
 
     data::InterpolationCellData = _loadinterpolationdata(cell)
@@ -174,26 +174,26 @@ end
 
 # Structure to hold a series and its related data
 mutable struct SeriesData
-    measurements::Array{Union{Missing, Float64}, 1}
-    uncertainties::Array{Union{Missing, Float64}, 1}
-    weights::Array{Union{Missing, Float64}, 1}
-    curve::Array{Float64, 1}
-    curveparams::Array{Float64, 1}
+    measurements::Vector{Union{Missing, Float64}}
+    uncertainties::Vector{Union{Missing, Float64}}
+    weights::Vector{Union{Missing, Float64}}
+    curve::Vector{Float64}
+    curveparams::Vector{Float64}
 
     function SeriesData()
         newobj::SeriesData = new()
-        newobj.measurements = Array{Union{Missing, Float64}, 1}()
-        newobj.uncertainties = Array{Union{Missing, Float64}, 1}()
-        newobj.weights = Array{Union{Missing, Float64}, 1}()
-        newobj.curve = Array{Float64, 1}()
-        newobj.curveparams = Array{Float64, 1}()
+        newobj.measurements = Vector{Union{Missing, Float64}}()
+        newobj.uncertainties = Vector{Union{Missing, Float64}}()
+        newobj.weights = Vector{Union{Missing, Float64}}()
+        newobj.curve = Vector{Float64}()
+        newobj.curveparams = Vector{Float64}()
         newobj
     end
 
-    function SeriesData(measurements::Array{Union{Missing, Float64}, 1}, uncertainties::Array{Union{Missing, Float64}, 1}, weights::Array{Union{Missing, Float64}, 1})
+    function SeriesData(measurements::Vector{Union{Missing, Float64}}, uncertainties::Vector{Union{Missing, Float64}}, weights::Vector{Union{Missing, Float64}})
         newobj::SeriesData = new(deepcopy(measurements), deepcopy(uncertainties), deepcopy(weights))
-        newobj.curve = Array{Float64, 1}()
-        newobj.curveparams = Array{Float64, 1}()
+        newobj.curve = Vector{Float64}()
+        newobj.curveparams = Vector{Float64}()
         newobj
     end
 
@@ -209,7 +209,7 @@ mutable struct SeriesData
 end
 
 # Perform interpolation
-function interpolate!(data::InterpolationCellData, step::UInt8, temporalacf::Array{Float64, 1},
+function interpolate!(data::InterpolationCellData, step::UInt8, temporalacf::Vector{Float64},
     spatialacfs::Array{Union{Missing, Float64}, 4}, spatialvariation::Array{Union{Missing, Float64}, 4},
     seamask::Array{UInt8, 2}, logger::SimpleLogger)
 
@@ -329,7 +329,7 @@ function interpolate!(data::InterpolationCellData, step::UInt8, temporalacf::Arr
 end
 
 # Try to fit a curve to the supplied time series
-function attemptfit!(series::SeriesData, temporalacf::Array{Float64, 1})
+function attemptfit!(series::SeriesData, temporalacf::Vector{Float64})
 
     # Attempt a curve fit
     fitcurve!(series)
@@ -342,7 +342,7 @@ end
 
 # Fit a harmonic curve to a time series
 function fitcurve!(series::SeriesData)
-    local fitseries::Array{Union{Missing, Float64}, 1} = removeoutliers(series.measurements)
+    local fitseries::Vector{Union{Missing, Float64}} = removeoutliers(series.measurements)
     if !doprefitcheck(fitseries)
         @info "PREFIT CHECKS FAILED"
     else
@@ -365,13 +365,13 @@ function fitcurve!(series::SeriesData)
             fitfunction = eval(Meta.parse("@. (x, p) -> " * formula))
             model(x, p) = Base.invokelatest(fitfunction, x, p)
 
-            local p0::Array{Float64, 1} = zeros(termcount)
-            local days::Array{UInt16, 1} = findall((!ismissing).(fitseries))
+            local p0::Vector{Float64} = zeros(termcount)
+            local days::Vector{UInt16} = findall((!ismissing).(fitseries))
 
             # TODO Handle fit failure
             local fit::LsqFit.LsqFitResult = curve_fit(model, days, collect(skipmissing(fitseries)), p0)
-            local fitparams::Array{Float64, 1} = fit.param
-            local fittedcurve::Array{Float64, 1} = makecurve(fitparams, length(fitseries))
+            local fitparams::Vector{Float64} = fit.param
+            local fittedcurve::Vector{Float64} = makecurve(fitparams, length(fitseries))
             @debug "Fitted params: $fitparams"
 
             # TODO Handle fit failure
@@ -409,8 +409,8 @@ end
 
 # Remove outliers from a time series. The outlier limit
 # is defined in MAX_STDEV
-function removeoutliers(series::Array{Union{Missing, Float64}, 1})::Array{Union{Missing, Float64}, 1}
-    local filteredseries::Array{Union{Missing, Float64}, 1} = Array{Union{Missing, Float64}, 1}(missing, length(series))
+function removeoutliers(series::Vector{Union{Missing, Float64}})::Vector{Union{Missing, Float64}}
+    local filteredseries::Vector{Union{Missing, Float64}} = Vector{Union{Missing, Float64}}(missing, length(series))
 
     local meanvalue::Float64 = mean(skipmissing(series))
     local stdev::Float64 = std(skipmissing(series), mean=meanvalue)
@@ -429,7 +429,7 @@ function removeoutliers(series::Array{Union{Missing, Float64}, 1})::Array{Union{
 end
 
 # Check that a time series is suitable to have a curve fit attempted on it
-function doprefitcheck(series::Array{Union{Missing, Float64}, 1})::Bool
+function doprefitcheck(series::Vector{Union{Missing, Float64}})::Bool
     local ok::Bool = true
 
     # Standard deviation
@@ -441,7 +441,7 @@ function doprefitcheck(series::Array{Union{Missing, Float64}, 1})::Bool
     end
 
     # Minimum time coverage
-    local missingdays::Array{Int64, 1} = findall(!ismissing, series)
+    local missingdays::Vector{Int64} = findall(!ismissing, series)
     local dayspan::Int64 = missingdays[end] - missingdays[1]
     @debug "Measurements span $dayspan days"
     if dayspan < MIN_TIME_SPAN
@@ -451,7 +451,7 @@ function doprefitcheck(series::Array{Union{Missing, Float64}, 1})::Bool
 
     # Populated months
     if ok
-        local populatedmonths::Array{Bool, 1} = falses(12)
+        local populatedmonths::Vector{Bool} = falses(12)
         for i in 1:length(series)
             if !ismissing(series[i])
                 local day::Int16 = mod(i, 365)
@@ -475,11 +475,11 @@ function doprefitcheck(series::Array{Union{Missing, Float64}, 1})::Bool
 end
 
 # Perform temporal interpolation
-function dotemporalinterpolation!(series::SeriesData, temporalacf::Array{Float64, 1})
+function dotemporalinterpolation!(series::SeriesData, temporalacf::Vector{Float64})
 
-    local interpolatedmeasurements::Array{Union{Missing, Float64}, 1} = Array{Union{Missing, Float64}}(missing, length(series.measurements))
-    local interpolatedweights::Array{Union{Missing, Float64}, 1} = Array{Union{Missing, Float64}}(missing, length(series.measurements))
-    local interpolateduncertainties::Array{Union{Missing, Float64}, 1} = Array{Union{Missing, Float64}}(missing, length(series.measurements))
+    local interpolatedmeasurements::Vector{Union{Missing, Float64}} = Array{Union{Missing, Float64}}(missing, length(series.measurements))
+    local interpolatedweights::Vector{Union{Missing, Float64}} = Array{Union{Missing, Float64}}(missing, length(series.measurements))
+    local interpolateduncertainties::Vector{Union{Missing, Float64}} = Array{Union{Missing, Float64}}(missing, length(series.measurements))
 
     for i in 1:length(series.measurements)
 
@@ -526,7 +526,7 @@ end
 
 # Merge two sets of values. Where two values overlap,
 # use the original
-function mergevalues!(original::Array{Union{Missing, Float64}, 1}, incoming::Array{Union{Missing, Float64}, 1})
+function mergevalues!(original::Vector{Union{Missing, Float64}}, incoming::Vector{Union{Missing, Float64}})
     for i in 1:length(original)
         if ismissing(original[i]) && !ismissing(incoming[i])
             original[i] = incoming[i]
@@ -615,7 +615,7 @@ function calculateinterpolationcells(cell::Cell, maxstep::Int64)::Vector{Cell}
     # The number of cells is therefore the triangular number of steps * 8
     # I have discovered a truly marvellous proof of why this is the case,
     # but this comment is too brief to contain it.
-    local interpolationcells::Array{Cell, 1} = Array{Cell, 1}()
+    local interpolationcells::Vector{Cell} = Vector{Cell}()
 
     for step_loop in 1:maxstep
         for y in (step_loop * -1):step_loop
@@ -646,7 +646,7 @@ end
 # Filter a set of interpolation cell candidates to remove unusable cells and sort them by
 # lowest uncertainty/highest weight
 function filterandsortinterpolationcells(cell::Cell, interpolationcandidates::Vector{Cell},
-    weights::Array{Union{Missing, Float64}, 1}, uncertainties::Array{Union{Missing, Float64}, 1},
+    weights::Vector{Union{Missing, Float64}}, uncertainties::Vector{Union{Missing, Float64}},
     spatialacfs::Array{Union{Missing, Float64}, 4}, spatialvariation::Array{Union{Missing, Float64}, 4},
     seamask::Array{UInt8, 2})::Vector{InterpolationCell}
 
@@ -698,8 +698,8 @@ function getspatialinterpolationuncertainty(source::Cell, dest::Cell,
     else
         # If we can't find an uncertainty for the specific cell combination, use the
         # mean uncertainty from the cells surrounding the target cell
-        local uncertaintycells::Array{Cell, 1} = calculateinterpolationcells(source, 1)
-        local uncertainties::Array{Union{Missing, Float64}, 1} = []
+        local uncertaintycells::Vector{Cell} = calculateinterpolationcells(source, 1)
+        local uncertainties::Vector{Union{Missing, Float64}} = []
 
         for uncertaintycell in uncertaintycells
             push!(uncertainties, spatialvariation[source.lon, source.lat, uncertaintycell.lon, uncertaintycell.lat])
@@ -1013,9 +1013,9 @@ function calcspatialinterpycell(lat::UInt16, y::Int64)::UInt16
 end
 
 # Make a curve using the supplied parameters
-function makecurve(params::Array{Float64, 1}, curvelength::Int64)::Array{Float64, 1}
+function makecurve(params::Vector{Float64}, curvelength::Int64)::Vector{Float64}
 
-    local curve::Array{Float64, 1} = zeros(curvelength)
+    local curve::Vector{Float64} = zeros(curvelength)
 
     for i in 1:length(curve)
 
@@ -1036,9 +1036,9 @@ function makecurve(params::Array{Float64, 1}, curvelength::Int64)::Array{Float64
 end
 
 # Make a curve using the supplied parameters
-function makeseasonalcycle(curveparams::Array{Float64, 1})::Array{Float64, 1}
+function makeseasonalcycle(curveparams::Vector{Float64})::Vector{Float64}
 
-    local seasonalcycle::Array{Float64, 1} = zeros(365)
+    local seasonalcycle::Vector{Float64} = zeros(365)
 
     for i in 1:length(seasonalcycle)
 
@@ -1059,16 +1059,16 @@ function makeseasonalcycle(curveparams::Array{Float64, 1})::Array{Float64, 1}
 end
 
 # Check multiple harmonics in a seasonal cycle
-function checkcurvepeaks(curveparams::Array{Float64, 1})::Bool
+function checkcurvepeaks(curveparams::Vector{Float64})::Bool
 
     local peaksok::Bool = true
 
-    local seasonalcycle::Array{Float64, 1} = makeseasonalcycle(curveparams)
+    local seasonalcycle::Vector{Float64} = makeseasonalcycle(curveparams)
 
-    local maxima::Array{Float64, 1} = Array{Float64, 1}()
-    local maximapos::Array{Int16, 1} = Array{Int16, 1}()
-    local minima::Array{Float64, 1} = Array{Float64, 1}()
-    local minimapos::Array{Int16, 1} = Array{Int16, 1}()
+    local maxima::Vector{Float64} = Vector{Float64}()
+    local maximapos::Vector{Int16} = Vector{Int16}()
+    local minima::Vector{Float64} = Vector{Float64}()
+    local minimapos::Vector{Int16} = Vector{Int16}()
 
     local lastvalue::Float64 = seasonalcycle[1]
     local slopedirection::Int8 = 0 # Starting value; 1 = up, -1 = down
@@ -1128,7 +1128,7 @@ function checkcurvepeaks(curveparams::Array{Float64, 1})::Bool
         peaksok = false
     else
         # Calculate the peak sizes
-        local peaksizes::Array{Float64, 1} = zeros(length(maxima))
+        local peaksizes::Vector{Float64} = zeros(length(maxima))
 
         for i in 1:length(maxima)
             local maxvalue::Float64 = maxima[i]
@@ -1137,7 +1137,7 @@ function checkcurvepeaks(curveparams::Array{Float64, 1})::Bool
             # For each peak, we find the position of the preceding minimum
             # We loop round to the end of the year if necessary
             local minentry::UInt16 = 0
-            local minposcandidates::Array{UInt16, 1} = findall(x -> (x < maxpos), minimapos)
+            local minposcandidates::Vector{UInt16} = findall(x -> (x < maxpos), minimapos)
             if length(minposcandidates) == 0
                 minentry = length(minima)
             else
@@ -1160,7 +1160,7 @@ function checkcurvepeaks(curveparams::Array{Float64, 1})::Bool
     peaksok
 end
 
-function checkcurvefit(series::Array{Union{Missing, Float64}, 1}, fittedcurve::Array{Float64, 1})::Bool
+function checkcurvefit(series::Vector{Union{Missing, Float64}}, fittedcurve::Vector{Float64})::Bool
 
     local curveok::Bool = true
 
@@ -1245,7 +1245,7 @@ function _loadinterpolationdata(cell::Cell)::InterpolationCellData
 end
 
 # Count the number of non-missing values in a series
-function _countvalues(series::Array{Union{Missing, Float64}, 1})::Int64
+function _countvalues(series::Vector{Union{Missing, Float64}})::Int64
     length(collect(skipmissing(series)))
 end
 
