@@ -96,21 +96,21 @@ function run()
 	# NOW THE PROCESSING
 	#
 	# Repeatedly process all cells until the number of finished cells stablises
-#	local finishedarray::Vector{Bool} = falses(length(cells))
-#	local lastfinishedcount::Int64 = 0
-#	local interpolationstep::Int8 = 0
+	local finishedarray::Vector{Bool} = falses(length(cells))
+	local lastfinishedcount::Int64 = 0
+	local interpolationstep::UInt8 = 0
 
-	#while lastfinishedcount == 0 || lastfinishedcount != sum(finishedarray .== true)
-	#	lastfinishedcount = sum(finishedarray .== true)
-	#	interpolationstep += 1
-	#	finishedarray = @showprogress 1 "Interpolating cells..." pmap(x -> interpolatecell(x, interpolationstep), cells)
-	#	println("Finished cells: $(sum(finishedarray .== true))")
-	#end
+  while lastfinishedcount == 0 || lastfinishedcount != sum(finishedarray .== true)
+		lastfinishedcount = sum(finishedarray .== true)
+		interpolationstep += 1
+		finishedarray = @showprogress 1 "Interpolating cells..." pmap(x -> interpolatecell(x, interpolationstep, temporalacf, spatialacfs, spatialvariation, seamask), cells)
+		println("Finished cells: $(sum(finishedarray .== true))")
+	end
 
-	local testcell::Cell = (lon=113, lat=18)
-	local finished::Bool = interpolatecell(testcell, convert(UInt8, 1), temporalacf, spatialacfs, spatialvariation, seamask)
+#	local testcell::Cell = (lon=113, lat=18)
+#	local finished::Bool = interpolatecell(testcell, convert(UInt8, 1), temporalacf, spatialacfs, spatialvariation, seamask)
 
-#	println("Final finished count: $lastfinishedcount")
+	println("Final finished count: $lastfinishedcount")
 
 	print("\n")
 end

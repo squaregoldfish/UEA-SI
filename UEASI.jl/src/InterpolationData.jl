@@ -156,6 +156,8 @@ end
 function interpolatecell(cell::Cell, interpolationstep::UInt8, temporalacf::Vector{Float64},
     spatialacfs::Array{Union{Missing, Float64}, 4}, spatialvariation::Array{Union{Missing, Float64}, 4}, seamask::Array{UInt8, 2})
 
+    println("$(cell.lon), $(cell.lat)")
+
     data::InterpolationCellData = _loadinterpolationdata(cell)
 
     if !data.finished
