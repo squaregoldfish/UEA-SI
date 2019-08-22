@@ -239,6 +239,7 @@ function interpolate!(data::InterpolationCellData, step::UInt8, temporalacf::Vec
                 currentseries.uncertainties = deepcopy(data.paraminputuncertainties)
                 currentseries.weights = deepcopy(data.paraminputweights)
             else
+                println("Interpolation $spatialinterpolationcount of $(length(spatialinterpolationcells))")
                 # Need to do spatial interpolation
                 dospatialinterpolation!(data, spatialinterpolationcells, spatialinterpolationcount,
                     spatialacfs, spatialvariation, seamask)
@@ -302,6 +303,9 @@ function interpolate!(data::InterpolationCellData, step::UInt8, temporalacf::Vec
 
                 if continuefit
                     spatialinterpolationcount += 1
+                    if spatialinterpolationcount > length(spatialinterpolationcells)
+                        continuefit = false
+                    end
                 end
             end
 
@@ -558,10 +562,9 @@ function dospatialinterpolation!(data::InterpolationCellData, interpolationcells
             spatialacfs, spatialvariation, seamask))
     end
 
-    @info "Performing spatial interpolation for cell $(data.cell.lon), $(data.cell.lat), cell $interpolationcount of $(length(interpolationcells))"
-
     # Only interpolate if there are interpolation cells
-    if length(interpolationcells) > 0
+    if length(interpolationcells) > 0 && interpolationcount < length(interpolationcells)
+        @info "Performing spatial interpolation for cell $(data.cell.lon), $(data.cell.lat), cell $interpolationcount of $(length(interpolationcells))"
 
         local interpolatedmeasurements::Array{Union{Missing, Float64}, 2} = Array{Union{Missing, Float64}}(missing, interpolationcount, length(data.originalinputseries))
         local interpolatedweights::Array{Union{Missing, Float64}, 2} = Array{Union{Missing, Float64}}(missing, interpolationcount, length(data.originalinputseries))
