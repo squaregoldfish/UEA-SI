@@ -54,6 +54,26 @@ ETOPO = nothing
 ETOPO_LONS = nothing
 ETOPO_LATS = nothing
 
+# Harmonic fit functions
+@. harmonicfit1(x, p) = p[1] + p[2]x +
+  p[3]*sin(2*π*(x/365)) + p[4]*cos(2*π*(x/365))
+
+@. harmonicfit2(x, p) = p[1] + p[2]x +
+  p[3]*sin(2*π*(x/365)) + p[4]*cos(2*π*(x/365)) +
+  p[5]*sin(2*π*2*(x/365)) + p[6]*cos(2*π*2*(x/365))
+
+@. harmonicfit3(x, p) = p[1] + p[2]x +
+  p[3]*sin(2*π*(x/365)) + p[4]*cos(2*π*(x/365)) +
+  p[5]*sin(2*π*2*(x/365)) + p[6]*cos(2*π*2*(x/365)) +
+  p[7]*sin(2*π*3*(x/365)) + p[8]*cos(2*π*3*(x/365))
+
+@. harmonicfit4(x, p) = p[1] + p[2]x +
+  p[3]*sin(2*π*(x/365)) + p[4]*cos(2*π*(x/365)) +
+  p[5]*sin(2*π*2*(x/365)) + p[6]*cos(2*π*2*(x/365)) +
+  p[7]*sin(2*π*3*(x/365)) + p[8]*cos(2*π*3*(x/365)) +
+  p[9]*sin(2*π*4*(x/365)) + p[10]*cos(2*π*4*(x/365))
+
+
 function init(lonsize::Int64, latsize::Int64)
     global LON_SIZE, LAT_SIZE, GRID_SIZE
     LON_SIZE = lonsize
@@ -358,24 +378,12 @@ function fitcurve!(series::SeriesData)::Bool
         while !fitsuccess && harmoniccount > 0
             @debug "Fitting $harmoniccount harmonic(s)"
 
-            local termcount::UInt8 = 0
-
-            local formula::String = "p[1] + p[2]x"
-            termcount = 2
-
-            for i in 1:harmoniccount
-                formula = "$formula + p[$(termcount + 1)]*sin(2*π*$i*(x/365)) + p[$(termcount + 2)]*cos(2*π*$i*(x/365))"
-                termcount += 2
-            end
-
-            fitfunction = eval(Meta.parse("@. (x, p) -> " * formula))
-            model(x, p) = Base.invokelatest(fitfunction, x, p)
-
-            local p0::Vector{Float64} = zeros(termcount)
-            local days::Vector{UInt16} = findall((!ismissing).(fitseries))
-
             # TODO Handle fit failure
-            local fit::LsqFit.LsqFitResult = curve_fit(model, days, collect(skipmissing(fitseries)), p0)
+            local days::Vector{UInt16} = findall((!ismissing).(fitseries))
+            local p0::Vector{Float64} = zeros(harmoniccount * 2 + 2)
+            local functionname::String = "harmonicfit$harmoniccount"
+
+            @time local fit::LsqFit.LsqFitResult = curve_fit(getfield(InterpolationData, Symbol(functionname)), days, collect(skipmissing(fitseries)), p0)
             local fitparams::Vector{Float64} = fit.param
             local fittedcurve::Vector{Float64} = makecurve(fitparams, length(fitseries))
             @debug "Fitted params: $fitparams"
