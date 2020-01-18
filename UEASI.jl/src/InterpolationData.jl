@@ -176,8 +176,6 @@ end
 function interpolatecell(cell::Cell, interpolationstep::UInt8, temporalacf::Vector{Float64},
     spatialacfs::Array{Union{Missing, Float64}, 4}, spatialvariation::Array{Union{Missing, Float64}, 4}, seamask::Array{UInt8, 2})
 
-    println("$(cell.lon), $(cell.lat)")
-
     data::InterpolationCellData = _loadinterpolationdata(cell)
 
     if !data.finished
@@ -383,7 +381,7 @@ function fitcurve!(series::SeriesData)::Bool
             local p0::Vector{Float64} = zeros(harmoniccount * 2 + 2)
             local functionname::String = "harmonicfit$harmoniccount"
 
-            @time local fit::LsqFit.LsqFitResult = curve_fit(getfield(InterpolationData, Symbol(functionname)), days, collect(skipmissing(fitseries)), p0)
+            local fit::LsqFit.LsqFitResult = curve_fit(getfield(InterpolationData, Symbol(functionname)), days, collect(skipmissing(fitseries)), p0)
             local fitparams::Vector{Float64} = fit.param
             local fittedcurve::Vector{Float64} = makecurve(fitparams, length(fitseries))
             @debug "Fitted params: $fitparams"
