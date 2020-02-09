@@ -6,5 +6,6 @@ echo "Copying..."
 cp -r interpolation_data.new interpolation_data
 
 echo "Running..."
-#julia -p 8 interpolation.jl
-julia --project=.. interpolation.jl
+export JULIA_PROJECT=".."
+julia -p 7 interpolation.jl
+#julia --project=.. interpolation.jl

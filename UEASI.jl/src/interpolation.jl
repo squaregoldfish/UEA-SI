@@ -8,13 +8,14 @@ const __INIT_DATA__ = false
 const __INIT_ONLY__ = false
 
 using Distributed
+
+@everywhere include("InterpolationData.jl")
+@everywhere using .InterpolationData
+
 using NCDatasets
 using ProgressMeter
 using Serialization
 using DelimitedFiles
-
-@everywhere include("InterpolationData.jl")
-@everywhere using .InterpolationData
 
 const FCO2_FILE = "daily.nc"
 const SPATIAL_VARIATION_FILE = "fco2_spatial_variation.jldata"
@@ -104,6 +105,7 @@ function run()
 #  local finished::Bool = interpolatecell(testcell, convert(UInt8, 1), temporalacf, spatialacfs, spatialvariation, seamask)
 #  println(finished)
 
+	println("Here we go...")
   while lastfinishedcount == 0 || lastfinishedcount != sum(finishedarray .== true)
 		lastfinishedcount = sum(finishedarray .== true)
 		interpolationstep += 1
