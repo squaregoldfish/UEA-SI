@@ -6,6 +6,7 @@ using Logging
 using Statistics
 using LsqFit
 using NCDatasets
+using SharedArrays
 
 export Cell
 export makecells
@@ -173,10 +174,10 @@ function makeinterpolationdata(cellindex::Int64, lonsize::Int64, latsize::Int64,
 end
 
 # Perform the main interpolation for a cell
-function interpolatecell(cell::Cell, interpolationstep::UInt8, temporalacf::Vector{Float64},
-    spatialacfs::Array{Union{Missing, Float64}, 4}, spatialvariation::Array{Union{Missing, Float64}, 4}, seamask::Array{UInt8, 2})
+function interpolatecell(cell::Cell, interpolationstep::UInt8, temporalacf::SharedArray{Float64, 1},
+    spatialacfs::SharedArray{Float64, 4}, spatialvariation::SharedArray{Float64, 4}, seamask::SharedArray{UInt8, 2})
 
-    println("CELL $(cell.lon) $(cell.lat)")
+    #println("CELL $(cell.lon) $(cell.lat)")
     data::InterpolationCellData = _loadinterpolationdata(cell)
 
     if !data.finished
@@ -230,9 +231,9 @@ mutable struct SeriesData
 end
 
 # Perform interpolation
-function interpolate!(data::InterpolationCellData, step::UInt8, temporalacf::Vector{Float64},
-    spatialacfs::Array{Union{Missing, Float64}, 4}, spatialvariation::Array{Union{Missing, Float64}, 4},
-    seamask::Array{UInt8, 2}, logger::SimpleLogger)
+function interpolate!(data::InterpolationCellData, step::UInt8, temporalacf::SharedArray{Float64, 1},
+    spatialacfs::SharedArray{Float64, 4}, spatialvariation::SharedArray{Float64, 4},
+    seamask::SharedArray{UInt8, 2}, logger::SimpleLogger)
 
     with_logger(logger) do
 
@@ -347,7 +348,7 @@ function interpolate!(data::InterpolationCellData, step::UInt8, temporalacf::Vec
 end
 
 # Try to fit a curve to the supplied time series
-function attemptfit!(series::SeriesData, temporalacf::Vector{Float64})::Bool
+function attemptfit!(series::SeriesData, temporalacf::SharedArray{Float64, 1})::Bool
 
     local fitsuccess::Bool = false
 
@@ -497,7 +498,7 @@ function doprefitcheck(series::Vector{Union{Missing, Float64}})::Bool
 end
 
 # Perform temporal interpolation
-function dotemporalinterpolation!(series::SeriesData, temporalacf::Vector{Float64})
+function dotemporalinterpolation!(series::SeriesData, temporalacf::SharedArray{Float64, 1})
 
     local interpolatedmeasurements::Vector{Union{Missing, Float64}} = Array{Union{Missing, Float64}}(missing, length(series.measurements))
     local interpolatedweights::Vector{Union{Missing, Float64}} = Array{Union{Missing, Float64}}(missing, length(series.measurements))
@@ -558,8 +559,8 @@ end
 
 # Perform one step of spatial interpolation
 function dospatialinterpolation!(data::InterpolationCellData, interpolationcells::Vector{InterpolationCell},
-    interpolationcount::UInt8, spatialacfs::Array{Union{Missing, Float64}, 4},
-    spatialvariation::Array{Union{Missing, Float64}, 4}, seamask::Array{UInt8, 2})
+    interpolationcount::UInt8, spatialacfs::SharedArray{Float64, 4},
+    spatialvariation::SharedArray{Float64, 4}, seamask::SharedArray{UInt8, 2})
 
     # Build the list of interpolation cells if it hasn't been done yet
     if length(interpolationcells) == 0
@@ -668,8 +669,8 @@ end
 # lowest uncertainty/highest weight
 function filterandsortinterpolationcells(cell::Cell, interpolationcandidates::Vector{Cell},
     weights::Vector{Union{Missing, Float64}}, uncertainties::Vector{Union{Missing, Float64}},
-    spatialacfs::Array{Union{Missing, Float64}, 4}, spatialvariation::Array{Union{Missing, Float64}, 4},
-    seamask::Array{UInt8, 2})::Vector{InterpolationCell}
+    spatialacfs::SharedArray{Float64, 4}, spatialvariation::SharedArray{Float64, 4},
+    seamask::SharedArray{UInt8, 2})::Vector{InterpolationCell}
 
     # The output of this is a table of cell, weight, uncertainty.
     # Sorted by uncertainty, distance between cells, weight, cell.lon, cell.lat
@@ -700,9 +701,9 @@ end
 
 # Retrieve the uncertainty for the interpolation between two cells
 function getspatialinterpolationuncertainty(source::Cell, dest::Cell,
-    spatialvariation::Array{Union{Missing, Float64}, 4})::Union{Float64, Missing}
+    spatialvariation::SharedArray{Float64, 4})::Float64
 
-    local uncertainty::Union{Float64, Missing} = missing
+    local uncertainty::Float64 = NaN
 
     # Here we use the pco2_spatial_variation object loaded at the start of the program.
     # This is a 4D array of <target_lon, target_lat, interp_lon, interp_lat>
@@ -711,23 +712,29 @@ function getspatialinterpolationuncertainty(source::Cell, dest::Cell,
 
     # We can use the uncertainty from both the interp and target cells, since they are
     # are in the same direction and therefore equivalent
-    local forwarduncertainty::Union{Missing, Float64} = spatialvariation[source.lon, source.lat, dest.lon, dest.lat]
-    local reverseuncertainty::Union{Missing, Float64} = spatialvariation[dest.lon, dest.lat, source.lon, source.lat]
+    local forwarduncertainty::Float64 = spatialvariation[source.lon, source.lat, dest.lon, dest.lat]
+    local reverseuncertainty::Float64 = spatialvariation[dest.lon, dest.lat, source.lon, source.lat]
 
-    if length(collect(skipmissing([forwarduncertainty, reverseuncertainty]))) > 0
-        uncertainty = mean(skipmissing([forwarduncertainty, reverseuncertainty]))
+    if !isnan(forwarduncertainty) && !isnan(reverseuncertainty)
+        uncertainty = (forwarduncertainty + reverseuncertainty) / 2
+    elseif !isnan(forwarduncertainty)
+        uncertainty = forwarduncertainty
+    elseif !isnan(reverseuncertainty)
+        uncertainty = reverseuncertainty
     else
         # If we can't find an uncertainty for the specific cell combination, use the
         # mean uncertainty from the cells surrounding the target cell
         local uncertaintycells::Vector{Cell} = calculateinterpolationcells(source, 1)
-        local uncertainties::Vector{Union{Missing, Float64}} = []
+        local uncertainties::Vector{Float64} = []
 
         for uncertaintycell in uncertaintycells
-            push!(uncertainties, spatialvariation[source.lon, source.lat, uncertaintycell.lon, uncertaintycell.lat])
+            if (!isnan(spatialvariation[source.lon, source.lat, uncertaintycell.lon, uncertaintycell.lat]))
+                push!(uncertainties, spatialvariation[source.lon, source.lat, uncertaintycell.lon, uncertaintycell.lat])
+            end
         end
 
-        if length(collect(skipmissing(uncertainties))) > 0
-            uncertainty = mean(skipmissing(uncertainties))
+        if length(uncertainties) > 0
+            uncertainty = mean(uncertainties)
         end
     end
 

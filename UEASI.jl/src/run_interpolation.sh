@@ -8,4 +8,4 @@ cp -r interpolation_data.new interpolation_data
 echo "Running..."
 export JULIA_PROJECT=".."
 julia -p 7 interpolation.jl
-#julia --project=.. interpolation.jl
+#julia interpolation.jl

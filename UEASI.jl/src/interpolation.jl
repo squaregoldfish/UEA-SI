@@ -16,6 +16,8 @@ using NCDatasets
 using ProgressMeter
 using Serialization
 using DelimitedFiles
+using SharedArrays
+using Missings
 
 const FCO2_FILE = "daily.nc"
 const SPATIAL_VARIATION_FILE = "fco2_spatial_variation.jldata"
@@ -33,7 +35,7 @@ function run()
 	else
 		loadcount = 7
 	end
-	local loadprogress::Progress = Progress(loadcount, 1, "Loading data...")
+	local loadprogress::Progress = Progress(loadcount, 0.001, "Loading data...")
 
 	# fCO2 values
 	local lons::Array{Union{Missing, Float32},1} = Dataset(FCO2_FILE)["longitude"][:]
@@ -51,21 +53,20 @@ function run()
 	end
 
 	# Sea mask
-	local seamask::Array{UInt8, 2} = convert.(UInt8, Dataset(SEA_FILE)["SEA"][:,:])
+	local seamask::SharedArray{UInt8, 2} = SharedArray(convert.(UInt8, Dataset(SEA_FILE)["SEA"][:,:]))
 	next!(loadprogress)
 
 	# Spatial variation
 	local inchan::IOStream = open(SPATIAL_VARIATION_FILE, "r")
-	local spatialvariation::Array{Union{Missing, Float64}, 4} = deserialize(inchan)
+	local spatialvariation::SharedArray{Float64, 4} = SharedArray(deserialize(inchan))
 	close(inchan)
-	replace!(spatialvariation, -1e35=>missing)
 	next!(loadprogress)
 
 	# Autocorrelation data
-	local spatialacfs::Array{Union{Missing, Float64}, 4} = Dataset(SPATIAL_ACFS_FILE)["mean_directional_acfs"][:,:,:,:]
+	local spatialacfs::SharedArray{Float64, 4} = SharedArray(Float64.(collect(Missings.replace(Dataset(SPATIAL_ACFS_FILE)["mean_directional_acfs"][:,:,:,:], NaN))))
 	next!(loadprogress)
 
-	local temporalacf::Vector{Float64} = readdlm(TEMPORAL_ACFS_FILE, ',', Float64, '\n')[:,2]
+	local temporalacf::SharedArray{Float64, 1} = SharedArray(readdlm(TEMPORAL_ACFS_FILE, ',', Float64, '\n')[:,2])
 
 	# Initialise InterpolationData module, incl. loading bathymetry
 	InterpolationData.init(length(lons), length(lats))
@@ -105,7 +106,6 @@ function run()
 #  local finished::Bool = interpolatecell(testcell, convert(UInt8, 1), temporalacf, spatialacfs, spatialvariation, seamask)
 #  println(finished)
 
-	println("Here we go...")
   while lastfinishedcount == 0 || lastfinishedcount != sum(finishedarray .== true)
 		lastfinishedcount = sum(finishedarray .== true)
 		interpolationstep += 1
