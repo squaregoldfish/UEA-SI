@@ -1,6 +1,7 @@
 SOCAT*.tsv
 daily.nc
 fco2.nc
+finished_steps.nc
 mean_directional_acfs.nc
 mean_temporal_acf.csv
 *.jldata

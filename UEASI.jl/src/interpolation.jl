@@ -13,6 +13,7 @@ using Distributed
 @everywhere using .InterpolationData
 
 using NCDatasets
+using DataStructures
 using ProgressMeter
 using Serialization
 using DelimitedFiles
@@ -68,9 +69,6 @@ function run()
 
 	local temporalacf::SharedArray{Float64, 1} = SharedArray(readdlm(TEMPORAL_ACFS_FILE, ',', Float64, '\n')[:,2])
 
-	# Initialise InterpolationData module, incl. loading bathymetry
-	InterpolationData.init(length(lons), length(lats))
-
 	finish!(loadprogress)
 
 	######################################
@@ -98,25 +96,45 @@ function run()
 	# NOW THE PROCESSING
 	#
 	# Repeatedly process all cells until the number of finished cells stablises
-	local finishedarray::Vector{Bool} = falses(length(cells))
+	local finishedarray::Vector{Int8} = zeros(length(cells))
 	local lastfinishedcount::Int64 = 0
 	local interpolationstep::UInt8 = 0
 
-#  local testcell::Cell = (lon=1, lat=36)
-#  local finished::Bool = interpolatecell(testcell, convert(UInt8, 1), temporalacf, spatialacfs, spatialvariation, seamask)
-#  println(finished)
-
-  while lastfinishedcount == 0 || lastfinishedcount != sum(finishedarray .== true)
-		lastfinishedcount = sum(finishedarray .== true)
+  while lastfinishedcount == 0 || lastfinishedcount != sum(finishedarray .≥ 1)
+		lastfinishedcount = sum(finishedarray .≥ 1)
 		interpolationstep += 1
-  	finishedarray = @showprogress 1 "Interpolating cells..." pmap(x -> interpolatecell(x, interpolationstep, temporalacf, spatialacfs, spatialvariation, seamask), cells)
-		println("Finished cells: $(sum(finishedarray .== true))")
-	end
+  	finishedarray = @showprogress 1 "Interpolating cells..." pmap((x, y) ->
+  		interpolatecell(x, y, interpolationstep, temporalacf, spatialacfs, spatialvariation, seamask), cells, finishedarray)
 
+		println("Finished cells: $(sum(finishedarray .≥ 1))")
+	end
 
 	println("Final finished count: $lastfinishedcount")
 
-	print("\n")
+	writefinished(finishedarray)
 end
 
-@time run()
+function writefinished(finished::Vector{Int8})
+
+	lons = Dataset(SEA_FILE)["LON"][:]
+	lats = Dataset(SEA_FILE)["LAT"][:]
+
+	nc = Dataset("finished_steps.nc", "c")
+	defDim(nc, "lon", length(lons))
+	defDim(nc, "lat", length(lats))
+
+	lonVar = defVar(nc, "lon", Float32, ("lon",), attrib = OrderedDict(
+    "units" => "degrees_east"))
+	lonVar[:] = lons
+
+	latVar = defVar(nc, "lat", Float32, ("lat",), attrib = OrderedDict(
+    "units" => "degrees_north"))
+	latVar[:] = lats
+
+	var = defVar(nc, "step", Int8, ("lat", "lon"))
+	var[:,:] = reshape(finished, (length(lats), length(lons)))
+
+	close(nc)
+end
+
+run()

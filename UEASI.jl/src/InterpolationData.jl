@@ -74,25 +74,6 @@ ETOPO_LATS = nothing
   p[7]*sin(2*π*3*(x/365)) + p[8]*cos(2*π*3*(x/365)) +
   p[9]*sin(2*π*4*(x/365)) + p[10]*cos(2*π*4*(x/365))
 
-
-function init(lonsize::Int64, latsize::Int64)
-    global LON_SIZE, LAT_SIZE, GRID_SIZE
-    LON_SIZE = lonsize
-    LAT_SIZE = latsize
-    GRID_SIZE = 360.0 / LON_SIZE
-
-    if !isfile(ETOPO_FILE)
-        println("\nMissing bathymetry file $ETOPO_FILE")
-        println("Available from $ETOPO_URL")
-        exit()
-    else
-        global ETOPO, ETOPO_LONS, ETOPO_LATS
-        ETOPO = convert.(Float64, Dataset(ETOPO_FILE)["ROSE"][:,:])
-        ETOPO_LONS = convert.(Float64, Dataset(ETOPO_FILE)["ETOPO60X"][:,:])
-        ETOPO_LATS = convert.(Float64, Dataset(ETOPO_FILE)["ETOPO60Y"][:,:])
-    end
-end
-
 ######################################################
 #
 # Data
@@ -174,19 +155,29 @@ function makeinterpolationdata(cellindex::Int64, lonsize::Int64, latsize::Int64,
 end
 
 # Perform the main interpolation for a cell
-function interpolatecell(cell::Cell, interpolationstep::UInt8, temporalacf::SharedArray{Float64, 1},
-    spatialacfs::SharedArray{Float64, 4}, spatialvariation::SharedArray{Float64, 4}, seamask::SharedArray{UInt8, 2})
+function interpolatecell(cell::Cell, finishedstep::Int8, interpolationstep::UInt8, temporalacf::SharedArray{Float64, 1},
+    spatialacfs::SharedArray{Float64, 4}, spatialvariation::SharedArray{Float64, 4}, seamask::SharedArray{UInt8, 2})::Int8
 
-    #println("CELL $(cell.lon) $(cell.lat)")
-    data::InterpolationCellData = _loadinterpolationdata(cell)
+    local result::Int8 = finishedstep
 
-    if !data.finished
-        local logger::Tuple{SimpleLogger, IOStream} = _makelogger(cell, interpolationstep)
-        interpolate!(data, interpolationstep, temporalacf, spatialacfs, spatialvariation, seamask, logger[1])
-        _closelogger(logger[2])
+    # Zero = not finished
+    if finishedstep == 0
+        data::InterpolationCellData = _loadinterpolationdata(cell)
+        if data.land
+            result = -1
+        else
+            local logger::Tuple{SimpleLogger, IOStream} = _makelogger(cell, interpolationstep)
+            interpolate!(data, interpolationstep, temporalacf, spatialacfs, spatialvariation, seamask, logger[1])
+            _closelogger(logger[2])
+
+            if data.finished
+                result = interpolationstep
+            end
+        end
+
     end
 
-    return data.finished
+    return result
 end
 
 
