@@ -131,7 +131,7 @@ function writefinished(finished::Vector{Int8})
     "units" => "degrees_north"))
 	latVar[:] = lats
 
-	var = defVar(nc, "step", Int8, ("lat", "lon"))
+	var = defVar(nc, "step", Int8, ("lat", "lon"), fillvalue = -1)
 	var[:,:] = reshape(finished, (length(lats), length(lons)))
 
 	close(nc)
