@@ -32,7 +32,7 @@ end
 
 missingtozero(interpolateduncertainties)
 
-scatter(1:timesteps, data.originalinputseries, yerr=data.originalinputuncertainties, label="Original", size=(800,800), mc=:red, ms=8, msc=:red)
+scatter(1:timesteps, data.originalinputseries, yerr=data.originalinputuncertainties, label="Original", size=(800,800), c=:red, ms=8, msw=0.1)
 #scatter!(1:timesteps, interpolatedpoints, yerr=interpolateduncertainties, label="Interpolated", mc=:blue, ms=8)
 
 
