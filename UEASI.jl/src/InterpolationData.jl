@@ -7,11 +7,14 @@ using Statistics
 using LsqFit
 using NCDatasets
 using SharedArrays
+using Plots
 
 export Cell
 export makecells
 export interpolatecell
 export InterpolationCellData
+export plotcell
+export _loadinterpolationdata
 
 const NO_CELL = 65535
 const ETOPO_FILE = "etopo60.cdf"
@@ -1290,6 +1293,29 @@ end
 # Create an InterpolationCell
 function _makeinterpolationcell(cell::Cell, weight::Union{Missing, Float64}, uncertainty::Union{Missing, Float64})::InterpolationCell
     (lon=cell.lon, lat=cell.lat, weight=weight, uncertainty=uncertainty)
+end
+
+# Plot a cell's details
+function plotcell(cell::Cell)
+    data::InterpolationCellData = _loadinterpolationdata(cell)
+
+    if (!data.land)
+        local timesteps::Int64 = size(data.originalinputseries)[1]
+
+        local interpolatedpoints::Vector{Union{Missing, Float64}} = data.paraminputseries
+        local interpolateduncertainties::Vector{Union{Missing, Float64}} = data.paraminputuncertainties
+        local originalindices::Array{Int64, 1} = findall((!ismissing).(data.originalinputseries))
+
+        for i in originalindices
+            interpolatedpoints[i] = missing
+            interpolateduncertainties[i] = missing
+        end
+
+        fig = scatter(1:timesteps, [interpolatedpoints data.originalinputseries], size=(1800,1200),
+            markerstrokewidth=0, markersize=8, markercolor=[:blue :red],
+            label=["Interpolated" "Original"])
+        png(fig, "fig.png")
+    end
 end
 
 end #module
