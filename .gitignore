@@ -5,7 +5,8 @@ finished_steps.nc
 mean_directional_acfs.nc
 mean_temporal_acf.csv
 *.jldata
-src/interpolation_data*
+UEASI.jl/src/interpolation_data*
+UEASI.jl/src/plots*
 Icon*
 *.cdf
 pco2_spatial_variation.R
