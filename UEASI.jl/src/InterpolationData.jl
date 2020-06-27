@@ -98,6 +98,7 @@ mutable struct InterpolationCellData
     paraminputseries::Vector{Union{Missing, Float64}}
     paraminputuncertainties::Vector{Union{Missing, Float64}}
     paraminputweights::Vector{Union{Missing, Float64}}
+    interpolationsteps::Int64
 
     function InterpolationCellData(cell::Cell, timesize::Int64, island::Bool, fco2::Vector{Union{Missing, Float64}},
         uncertainty::Vector{Union{Missing, Float64}})
@@ -117,6 +118,8 @@ mutable struct InterpolationCellData
         newobj.paraminputuncertainties = copy(newobj.originalinputuncertainties)
         newobj.paraminputweights = copy(newobj.originalinputweights)
 
+        newobj.interpolationsteps = 0
+
         newobj
     end
 end #InterpolationCellData
@@ -133,7 +136,7 @@ function makecells(lonsize::Int64, latsize::Int64)::Vector{Cell}
 end
 
 # Create the array of base data structures for the interpolations
-function makecells(lonsize::Int64, latsize::Int64, timesize::Int64, seamask::Array{UInt8, 2},
+function makecells(lonsize::Int64, latsize::Int64, timesize::Int64, seamask::SharedArray{UInt8, 2},
     fco2::Array{Union{Missing, Float64}, 3}, uncertainty::Array{Union{Missing, Float64}, 3})::Vector{Cell}
 
     if isdir(INTERPOLATION_DATA_DIR)
@@ -151,7 +154,7 @@ function makecells(lonsize::Int64, latsize::Int64, timesize::Int64, seamask::Arr
 end #_makecells
 
 # Generate the basic interpolation data
-function makeinterpolationdata(cellindex::Int64, lonsize::Int64, latsize::Int64, seamask::Array{UInt8, 2}, timesize::Int64,
+function makeinterpolationdata(cellindex::Int64, lonsize::Int64, latsize::Int64, seamask::SharedArray{UInt8, 2}, timesize::Int64,
     fco2::Array{Union{Missing, Float64}, 3}, uncertainty::Array{Union{Missing, Float64}, 3})::Cell
 
     local cell::Cell = _makecell(cellindex, lonsize, latsize)
@@ -342,6 +345,7 @@ function interpolate!(data::InterpolationCellData, step::UInt8, temporalacf::Sha
                 @info "FIT FAILED"
             end
 
+            data.interpolationsteps = step
             _saveinterpolationdata(data)
         end
     end
@@ -1348,7 +1352,7 @@ function plotcell(cell::Cell, folder::String)
 
         if data.finished
             # Make sure we have a fresh plot
-            plot()
+            plot(title="$(cell.lon) $(cell.lat) ($(data.interpolationsteps) steps)")
 
             if sum((!ismissing).(temporalinterpolatedpoints)) > 0
                 scatter!(1:timesteps, temporalinterpolatedpoints, label="Temporal Interpolated", seriescolor=RGB(.75, .75, 1), ms=8, msw=0.1, size=(2400,800))
@@ -1364,9 +1368,9 @@ function plotcell(cell::Cell, folder::String)
 
             fittedcurve = makecurve(data.fitparams, timesteps)
             plot!(fittedcurve, label="Fitted curve", seriescolor=RGB(.5, .5, .5))
-        end
 
-        png("$(folder)/$(cell.lon)_$(cell.lat).png")
+            png("$(folder)/$(cell.lon)_$(cell.lat).png")
+        end
     end
 end
 

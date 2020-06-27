@@ -106,7 +106,7 @@ function run()
   	finishedarray = @showprogress 1 "Interpolating cells..." pmap((x, y) ->
   		interpolatecell(x, y, interpolationstep, temporalacf, spatialacfs, spatialvariation, seamask), cells, finishedarray)
 
-		println("Finished cells: $(sum(finishedarray .≥ 1))")
+		println("Finished cells: $(sum(finishedarray .≥ 1)) (+ $(sum(finishedarray .≥ 1) - lastfinishedcount))")
 	end
 
 	println("Final finished count: $lastfinishedcount")

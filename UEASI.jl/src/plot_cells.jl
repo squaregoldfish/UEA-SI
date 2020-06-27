@@ -19,8 +19,8 @@ function run()
 
 	@showprogress 1 pmap(x -> plotcell(x, "plots"), cells)
 
-#  cell::Cell = cells[25]
-#  plotcell(cell, "plots")
+  #cell::Cell = cells[25]
+  #plotcell(cell, "plots")
 end
 
 run()
