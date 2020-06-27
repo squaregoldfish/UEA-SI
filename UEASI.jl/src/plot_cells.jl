@@ -19,12 +19,8 @@ function run()
 
 	@showprogress 1 pmap(x -> plotcell(x, "plots"), cells)
 
-
 #  cell::Cell = cells[25]
 #  plotcell(cell, "plots")
-#
- # 	finishedarray = @showprogress 1 "Interpolating cells..." pmap((x, y) ->
-  #		interpolatecell(x, y, interpolationstep, temporalacf, spatialacfs, spatialvariation, seamask), cells, finishedarray)
 end
 
 run()
