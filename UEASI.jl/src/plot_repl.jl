@@ -13,7 +13,7 @@ lons = Dataset(FCO2_FILE)["longitude"][:]
 lats = Dataset(FCO2_FILE)["latitude"][:]
 cells = makecells(length(lons), length(lats))
 
-cell = cells[25]
+cell = cells[5747]
 data = _loadinterpolationdata(cell)
 
 # Replace missings in uncertaintes with zeros

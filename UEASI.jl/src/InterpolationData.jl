@@ -346,6 +346,7 @@ function interpolate!(data::InterpolationCellData, step::UInt8, temporalacf::Sha
             end
 
             data.interpolationsteps = step
+            @debug "Interpolated points: $(sum((!ismissing).(data.paraminputseries)))"
             _saveinterpolationdata(data)
         end
     end

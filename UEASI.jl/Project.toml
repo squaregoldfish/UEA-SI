@@ -1,4 +1,4 @@
-name = "UEASI.jl"
+name = "UEASI"
 uuid = "1a9f68e8-9849-11e9-3bcf-2b93def2cc93"
 authors = ["Steve Jones <steve@squaregoldfish.co.uk>"]
 version = "0.1.0"
